@@ -1,5 +1,4 @@
 const { readSSE } = require('../../utils/sse-reader')
-const { setupStreamHandlers } = require('../../utils/stream-helpers')
 
 /**
  * @param {object} w - window object from Claude API { utilization, resets_at }
@@ -36,16 +35,8 @@ function formatWindow(w, resetFormat = 'time') {
  * @param {object} session
  * @param {object} parser
  */
-async function claudeStreamHandler(res, stream, session, parser, cb) {
-  const tokenUsage = {}
+async function claudeStreamHandler(stream, session, parser, cb) {
   let limitReached = null
-  const { sendFinalChunk, onError } = setupStreamHandlers(
-    res,
-    session,
-    parser,
-    'Claude',
-    tokenUsage,
-  )
 
   await readSSE(stream, {
     onData: (parsed) => {
@@ -75,9 +66,9 @@ async function claudeStreamHandler(res, stream, session, parser, cb) {
             const worstWindow = h5.util > d7.util ? h5 : d7
             const CONTEXT_WINDOW = 264_000
             const usedTokens = Math.round(worstWindow.util * CONTEXT_WINDOW)
-            tokenUsage.prompt_tokens = usedTokens
-            tokenUsage.completion_tokens = 0
-            tokenUsage.total_tokens = usedTokens
+            parser.tokenUsage.prompt_tokens = usedTokens
+            parser.tokenUsage.completion_tokens = 0
+            parser.tokenUsage.total_tokens = usedTokens
 
             if (worstWindow.util >= 0.9) {
               limitReached = worstWindow
@@ -87,21 +78,21 @@ async function claudeStreamHandler(res, stream, session, parser, cb) {
         }
         case 'error': {
           const err = parsed.error || {}
-          onError({ message: err.message, type: err.type })
+          parser.onError({ message: err.message, type: err.type })
           break
         }
       }
     },
     onDone: () => {},
-    onError,
+    onError: (e) => parser.onError(e),
   })
 
   if (limitReached && cb) {
-    await cb(limitReached, sendFinalChunk)
+    await cb(limitReached)
     return
   }
 
-  sendFinalChunk()
+  parser.sendFinalChunk()
 }
 
 module.exports = { claudeStreamHandler }

@@ -1,5 +1,4 @@
 const { readSSE } = require('../../utils/sse-reader')
-const { setupStreamHandlers } = require('../../utils/stream-helpers')
 
 /**
  * ChatGPT SSE Stream Handler
@@ -13,16 +12,7 @@ const { setupStreamHandlers } = require('../../utils/stream-helpers')
  *   data: {"type":"message_stream_complete"}                      → finish
  *   data: [DONE]                                                  → finish
  */
-async function chatgptStreamHandler(res, stream, session, parser) {
-  const tokenUsage = {}
-  const { sendFinalChunk, onError } = setupStreamHandlers(
-    res,
-    session,
-    parser,
-    'ChatGPT',
-    tokenUsage,
-  )
-
+async function chatgptStreamHandler(stream, session, parser) {
   const onData = (data) => {
     if (!data) return
 
@@ -32,7 +22,7 @@ async function chatgptStreamHandler(res, stream, session, parser) {
     }
     if (data.type === 'message_stream_complete') {
       session.chatSessionId = data.conversation_id
-      sendFinalChunk()
+      parser.sendFinalChunk()
       return
     }
     if (data.type === 'resume_conversation_token' && data.conversation_id) {
@@ -55,12 +45,16 @@ async function chatgptStreamHandler(res, stream, session, parser) {
       for (const op of data.v) {
         if (op.p === '/message/content/parts/0' && op.o === 'append') parser.scan(op.v)
         if (op.p === '/message/status' && op.o === 'replace' && op.v === 'finished_successfully')
-          sendFinalChunk()
+          parser.sendFinalChunk()
       }
     }
   }
 
-  await readSSE(stream, { onData, onDone: sendFinalChunk, onError })
+  await readSSE(stream, {
+    onData,
+    onDone: () => parser.sendFinalChunk(),
+    onError: (e) => parser.onError(e),
+  })
 }
 
 module.exports = { chatgptStreamHandler }

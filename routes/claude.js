@@ -5,9 +5,9 @@ const { ClaudeAPI } = require('../core/claude/api')
 const { claudeStreamHandler } = require('../core/claude/stream-handler')
 const { setClaudeInstructions } = require('../core/claude/set-instructions')
 const { acquireSlot } = require('../utils/rate-limiter')
-const { setSSEHeaders, createSendFinalChunk } = require('../utils/stream-helpers')
 const { validateMessages, handleRouteError } = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
+const { handleSkill } = require('../lib/engine/triggers')
 
 const claudeApi = new ClaudeAPI()
 
@@ -27,12 +27,13 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
 
     if (!validateMessages(messages, res)) return
 
+    const compiler = new ToolCompiler(req.ide, 'claude')
+    ToolCompiler.setSSEHeaders(res)
+    const parser = compiler.getParser(res, session)
+
     if (userData?.waitUntil && userData.waitUntil > Date.now()) {
       emitLimitResponse(
-        res,
-        req,
-        session,
-        {},
+        parser,
         userData.waitUntil,
         `This user's usage quota is still over its limit`,
       )
@@ -41,23 +42,13 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
 
     const fileIds = []
     const uploadFile = async (f) => fileIds.push(await claudeApi.uploadFile(f))
-    const compiler = new ToolCompiler(req.ide, 'claude')
     const isNewSession = session.parentMessageId == null
 
     const { dynamicGrammar } = compiler.syncDynamicTools(req.body.tools || [], session)
 
     const { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, uploadFile)
 
-    setSSEHeaders(res)
-
-    const parser = new ToolCompiler.Stream(res, 'claude', compiler, session)
-
-    if (skill) {
-      console.info(
-        `[Claude] Skill trigger detected (${skill.triggers[0]}) — bypassing provider API`,
-      )
-      return ToolCompiler.emitAndEnd(res, parser, skill.bpi)
-    }
+    if (skill) return handleSkill(skill, req, dynamicGrammar, parser)
 
     if (isNewSession) {
       await setClaudeInstructions(claudeApi, userData, dynamicGrammar, toolCalling)
@@ -80,73 +71,55 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
         session.chatSessionId = chatSessionId
       }
 
-      await claudeStreamHandler(
-        res,
-        stream,
-        session,
-        parser,
-        async (limitReached, sendFinalChunk) => {
-          if (limitReached?.resets_at) {
-            userData.waitUntil = limitReached.resets_at * 1000
-            userData.waitReason = 'Claude rate limit'
+      await claudeStreamHandler(stream, session, parser, async (limitReached) => {
+        if (limitReached?.resets_at) {
+          userData.waitUntil = limitReached.resets_at * 1000
+          userData.waitReason = 'Claude rate limit'
 
-            const resetTime = new Date(userData.waitUntil).toLocaleTimeString()
-            const mins = Math.max(1, Math.ceil((userData.waitUntil - Date.now()) / 60000))
-            const overUtilized = limitReached.util >= 1.0
+          const resetTime = new Date(userData.waitUntil).toLocaleTimeString()
+          const mins = Math.max(1, Math.ceil((userData.waitUntil - Date.now()) / 60000))
+          const overUtilized = limitReached.util >= 1.0
 
-            if (overUtilized) {
-              console.warn(`[Claude] ⚠ Usage at ${limitReached.pct} — over limit, skipping summary`)
-              emitLimitResponse(
-                res,
-                req,
-                session,
-                { compiler, parser, sendFinalChunk },
-                userData.waitUntil,
-                `This user's usage quota has already been reached (${limitReached.pct})`,
-              )
-              return
-            }
-
-            console.warn(`[Claude] ⚠ Usage at ${limitReached.pct} — requesting summary`)
-
-            try {
-              const summaryPrompt = `Please write a concise but complete summary of this entire conversation — so it can be pasted into a fresh session to resume work seamlessly.`
-              const { stream: summaryStream } = await claudeApi.chatCompletion(
-                summaryPrompt,
-                session.chatSessionId,
-                session.parentMessageId,
-                model,
-                [],
-              )
-
-              parser.scan('\n\n````text\n')
-              await claudeStreamHandler(
-                res,
-                summaryStream,
-                session,
-                parser,
-                (limitReached, sendFinalChunk) => {
-                  parser.scan('\n````')
-                  parser.scan(limitMessageText(resetTime, mins))
-                  sendFinalChunk()
-                },
-              )
-            } catch (summaryErr) {
-              console.error(`[Claude] Summary failed: ${summaryErr.message}`)
-              emitLimitResponse(
-                res,
-                req,
-                session,
-                { compiler, parser, sendFinalChunk },
-                userData.waitUntil,
-                `Could not generate a conversation summary — usage is already over the limit (${limitReached.pct}), so this request was rejected too`,
-              )
-            }
-
+          if (overUtilized) {
+            console.warn(`[Claude] ⚠ Usage at ${limitReached.pct} — over limit, skipping summary`)
+            emitLimitResponse(
+              parser,
+              userData.waitUntil,
+              `This user's usage quota has already been reached (${limitReached.pct})`,
+            )
             return
           }
-        },
-      )
+
+          console.warn(`[Claude] ⚠ Usage at ${limitReached.pct} — requesting summary`)
+
+          try {
+            const summaryPrompt = `Please write a concise but complete summary of this entire conversation — so it can be pasted into a fresh session to resume work seamlessly.`
+            const { stream: summaryStream } = await claudeApi.chatCompletion(
+              summaryPrompt,
+              session.chatSessionId,
+              session.parentMessageId,
+              model,
+              [],
+            )
+
+            parser.scan('\n\n````text\n')
+            await claudeStreamHandler(summaryStream, session, parser, () => {
+              parser.scan('\n````')
+              parser.scan(limitMessageText(resetTime, mins))
+              parser.sendFinalChunk()
+            })
+          } catch (summaryErr) {
+            console.error(`[Claude] Summary failed: ${summaryErr.message}`)
+            emitLimitResponse(
+              parser,
+              userData.waitUntil,
+              `Could not generate a conversation summary — usage is already over the limit (${limitReached.pct}), so this request was rejected too`,
+            )
+          }
+
+          return
+        }
+      })
     } catch (error) {
       console.error(`[Claude] Route error: ${error.message}`)
 
@@ -162,14 +135,7 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
         }
 
         if (payload?.resolved?.status === 'exceeded') {
-          emitLimitResponse(
-            res,
-            req,
-            session,
-            { compiler },
-            userData.waitUntil,
-            `This user's usage quota has been reached`,
-          )
+          emitLimitResponse(parser, userData.waitUntil, `This user's usage quota has been reached`)
 
           return
         }
@@ -192,17 +158,12 @@ function computeReset(waitUntilMs) {
   return { resetTime, mins }
 }
 
-function emitLimitResponse(res, req, session, ctx, waitUntilMs, prefix) {
+function emitLimitResponse(parser, waitUntilMs, prefix) {
   const { resetTime, mins } = computeReset(waitUntilMs)
-
-  if (!res.headersSent) setSSEHeaders(res)
-  const compiler = ctx.compiler || new ToolCompiler(req.ide, 'claude')
-  const parser = ctx.parser || new ToolCompiler.Stream(res, 'claude', compiler, session)
-  const sendFinalChunk = ctx.sendFinalChunk || createSendFinalChunk(res, session, parser, {})
 
   parser.scan(`\n\n⚠ ${prefix} — it needs ~${mins} min to reset at ${resetTime}.\n`)
   parser.scan(limitMessageText(resetTime, mins))
-  sendFinalChunk()
+  parser.sendFinalChunk()
 }
 
 module.exports = { buildClaudeRouter }

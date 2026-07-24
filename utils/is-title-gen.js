@@ -1,5 +1,4 @@
 const ToolCompiler = require('../lib/engine')
-const { setSSEHeaders } = require('./stream-helpers')
 
 /**
  * OpenCode fires two calls on a session's first message: one is a lightweight
@@ -45,9 +44,9 @@ function tryEmitTitle(req, res, provider, session) {
   if (!isTitleGenCall(req.ide, messages)) return false
 
   const compiler = new ToolCompiler(req.ide, provider)
-  setSSEHeaders(res)
-  const parser = new ToolCompiler.Stream(res, provider, compiler, session)
-  ToolCompiler.emitAndEnd(res, parser, withLiveTime(session.name) || 'New session')
+  ToolCompiler.setSSEHeaders(res)
+  const parser = compiler.getParser(res, session)
+  parser.emitAndEnd(withLiveTime(session.name) || 'New session')
   return true
 }
 

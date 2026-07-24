@@ -1,6 +1,5 @@
 const modules = [
   './utils/errors',
-  './utils/stream-helpers',
   './utils/route-helpers',
   './utils/rate-limiter',
   './utils/cookie-jar',

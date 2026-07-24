@@ -1,5 +1,4 @@
 const { toOpenAIError } = require('./errors')
-const { createSendFinalChunk } = require('./stream-helpers')
 
 function validateMessages(messages, res) {
   if (!messages || messages.length === 0) {
@@ -24,8 +23,7 @@ function handleRouteError(error, provider, res, session, parser) {
 
   if (res.headersSent) {
     parser.scan(`\n\n⚠ ${err.error.message}${err.error.action ? ' ' + err.error.action : ''}\n`)
-    const sendFinalChunk = createSendFinalChunk(res, session, parser, {})
-    sendFinalChunk()
+    parser.sendFinalChunk()
     return
   }
 

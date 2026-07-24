@@ -5,9 +5,9 @@ const instructions = require('../lib/engine/instructions')
 const { ChatGPTAPI } = require('../core/chatgpt/api')
 const { chatgptStreamHandler } = require('../core/chatgpt/stream-handler')
 const { acquireSlot } = require('../utils/rate-limiter')
-const { setSSEHeaders } = require('../utils/stream-helpers')
 const { validateMessages, handleRouteError } = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
+const { handleSkill } = require('../lib/engine/triggers')
 
 const chatgptApi = new ChatGPTAPI()
 
@@ -39,16 +39,11 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
 
     let { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, uploadFile)
 
-    setSSEHeaders(res)
+    ToolCompiler.setSSEHeaders(res)
 
-    const parser = new ToolCompiler.Stream(res, 'chatgpt', compiler, session)
+    const parser = compiler.getParser(res, session)
 
-    if (skill) {
-      console.info(
-        `[ChatGPT] Skill trigger detected (${skill.triggers[0]}) — bypassing provider API`,
-      )
-      return ToolCompiler.emitAndEnd(res, parser, skill.bpi)
-    }
+    if (skill) return handleSkill(skill, req, dynamicGrammar, parser)
 
     if (isNewSession && toolCalling) {
       // await setChatGPTInstructions(chatgptApi, userData)
@@ -66,7 +61,7 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
         attachments,
       )
 
-      chatgptStreamHandler(res, stream, session, parser)
+      chatgptStreamHandler(stream, session, parser)
     } catch (error) {
       return handleRouteError(error, 'ChatGPT', res, session, parser)
     }

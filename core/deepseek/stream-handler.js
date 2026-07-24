@@ -1,5 +1,4 @@
 const { readSSE } = require('../../utils/sse-reader')
-const { setupStreamHandlers } = require('../../utils/stream-helpers')
 
 /**
  * DeepSeek SSE Stream Handler
@@ -10,15 +9,7 @@ const { setupStreamHandlers } = require('../../utils/stream-helpers')
  *   data: {"v":{"response":{...}}}           → message delta with metadata
  *   data: {"v":"text"}                       → bare text delta
  */
-function streamHandler(res, stream, session, parser, retry) {
-  const tokenUsage = {}
-  const { sendFinalChunk, onError } = setupStreamHandlers(
-    res,
-    session,
-    parser,
-    'DeepSeek',
-    tokenUsage,
-  )
+function streamHandler(stream, session, parser, retry) {
   let cancelled = false
   let finished = false
 
@@ -34,15 +25,15 @@ function streamHandler(res, stream, session, parser, retry) {
       } catch {}
       retry()
         .then((newStream) => {
-          streamHandler(res, newStream, session, parser, retry)
+          streamHandler(newStream, session, parser, retry)
         })
         .catch((err) => {
           console.error(`[DeepSeek] Retry failed: ${err.message}`)
-          sendFinalChunk()
+          parser.sendFinalChunk()
         })
       return
     }
-    sendFinalChunk()
+    parser.sendFinalChunk()
   }
 
   const onData = (data) => {
@@ -54,15 +45,16 @@ function streamHandler(res, stream, session, parser, retry) {
     } else if (data.o === 'SET') {
       if (data.v === 'FINISHED') {
         finished = true
-        sendFinalChunk()
+        parser.sendFinalChunk()
       }
     } else if (data.o === 'BATCH') {
       const usageEntry = data.v?.find((e) => e.p === 'accumulated_token_usage')
       const statusEntry = data.v?.find((e) => e.p === 'quasi_status')
       if (usageEntry) {
-        tokenUsage.prompt_tokens = 0
-        tokenUsage.completion_tokens = usageEntry.v
-        tokenUsage.total_tokens = tokenUsage.completion_tokens + tokenUsage.prompt_tokens
+        parser.tokenUsage.prompt_tokens = 0
+        parser.tokenUsage.completion_tokens = usageEntry.v
+        parser.tokenUsage.total_tokens =
+          parser.tokenUsage.completion_tokens + parser.tokenUsage.prompt_tokens
         console.debug(`[DeepSeek] Tokens: ${usageEntry.v} (status: ${statusEntry?.v ?? '-'})`)
       }
     } else {
@@ -83,7 +75,7 @@ function streamHandler(res, stream, session, parser, retry) {
     doRetry('stream closed unexpectedly')
   }
 
-  readSSE(stream, { onData, onDone, onError })
+  readSSE(stream, { onData, onDone, onError: (e) => parser.onError(e) })
 }
 
 module.exports = { streamHandler }

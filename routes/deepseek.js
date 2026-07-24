@@ -4,9 +4,9 @@ const ToolCompiler = require('../lib/engine')
 const { DeepSeekAPI } = require('../core/deepseek/api')
 const { streamHandler } = require('../core/deepseek/stream-handler')
 const { acquireSlot } = require('../utils/rate-limiter')
-const { setSSEHeaders } = require('../utils/stream-helpers')
 const { validateMessages, handleRouteError } = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
+const { handleSkill } = require('../lib/engine/triggers')
 
 const deepseekApi = new DeepSeekAPI()
 
@@ -41,16 +41,11 @@ async function buildDeepSeekRouter(parsedFetch, session) {
       prompt = toolCalling ? compiler.buildPrompt(prompt, dynamicGrammar) : prompt
     }
 
-    setSSEHeaders(res)
+    ToolCompiler.setSSEHeaders(res)
 
-    const parser = new ToolCompiler.Stream(res, 'deepseek', compiler, session)
+    const parser = compiler.getParser(res, session)
 
-    if (skill) {
-      console.info(
-        `[DeepSeek] Skill trigger detected (${skill.triggers[0]}) — bypassing provider API`,
-      )
-      return ToolCompiler.emitAndEnd(res, parser, skill.bpi)
-    }
+    if (skill) return handleSkill(skill, req, dynamicGrammar, parser)
 
     try {
       await acquireSlot('DeepSeek')
@@ -77,7 +72,7 @@ async function buildDeepSeekRouter(parsedFetch, session) {
         )
       }
 
-      streamHandler(res, deepseekStream, session, parser, retry)
+      streamHandler(deepseekStream, session, parser, retry)
     } catch (error) {
       return handleRouteError(error, 'DeepSeek', res, session, parser)
     }

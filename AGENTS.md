@@ -19,17 +19,17 @@ core/ # session management, chat router, provider API clients
   core/deepseek/stream-handler.js → streamHandler — SSE parser for DeepSeek response format
  core/claude/ # Claude API client, SSE stream handler, instructions setter
   core/claude/api.js → ClaudeAPI — conversation completion, file upload (uploadFile — multipart POST to /api/orgId/upload → file_uuid), client-side UUID gen, org ID extraction, HAR-ordered headers, session delete, cookie management, HTTP keep-alive, optional _log flag, getAccountProfile for live validation
-  core/claude/stream-handler.js → claudeStreamHandler(res, stream, session, parser, cb) — SSE parser, message_limit detection, delegates >=90% usage to cb callback
+  core/claude/stream-handler.js → claudeStreamHandler(stream, session, parser, cb) — SSE parser, message_limit detection, delegates >=90% usage to cb callback
   core/claude/set-instructions.js → setClaudeInstructions — PUT account_profile with system prompt
  core/chatgpt/ # ChatGPT API client, POW solver, SSE stream handler, instructions setter
   core/chatgpt/api.js → ChatGPTAPI — conversation prepare, sentinel refresh, POW, conduit token flow, session deletion (PATCH), cookie management, UA extraction from proof token, HTTP keep-alive, optional _log flag, getMe for live validation, uploadFile (file/image upload: POST /backend-api/files → PUT raw bytes to Azure SAS blob URL → POST /backend-api/files/process_upload_stream, waits for file.processing.completed) → returns attachment descriptor pushed into chatCompletion's attachments param → injected into message.metadata.attachments + prepare call's attachment_mime_types
   core/chatgpt/pow.js → ChatGPTProofOfWork — SHA3-512 sentinel proof-of-work solver
-  core/chatgpt/stream-handler.js → chatgptStreamHandler — SSE parser for ChatGPT response format
+  core/chatgpt/stream-handler.js → chatgptStreamHandler(stream, session, parser) — SSE parser for ChatGPT response format
   core/chatgpt/set-instructions.js → setChatGPTInstructions — PATCH user_system_messages
 routes/ # Express route builders (one per provider + models + health)
- routes/deepseek.js → buildDeepSeekRouter(headers, session)
- routes/claude.js → buildClaudeRouter(parsedFetch, session, userData)
- routes/chatgpt.js → buildChatGPTRouter(parsedFetch, session, userData)
+ routes/deepseek.js → buildDeepSeekRouter(headers, session) — creates compiler, parser via compiler.getParser(res, session), skill check calls handleSkill(skill, req, dynamicGrammar, parser)
+ routes/claude.js → buildClaudeRouter(parsedFetch, session, userData) — same pattern; emitLimitResponse(parser, waitUntilMs, prefix)
+ routes/chatgpt.js → buildChatGPTRouter(parsedFetch, session, userData) — same pattern
  routes/models.js → buildModelsRouter(preSelected) — GET /v1/models (returns object: 'list', data, activeModel), GET /v1/models/:model (lookup by meta.id slug)
  routes/health.js → buildHealthRouter(preSelected) — GET /health (returns status, uptime, timestamp, provider, model, username)
  routes/info.js → GET / — API info (name, version, endpoints, models)
@@ -39,9 +39,9 @@ lib/engine/ # tool compilation, prompt formatting, IDE mappings
  lib/engine/instructions.js → Instructions singleton; lazy-loads instructions.md + skills-extra.md
  lib/engine/instructions.md # system prompt for LLM (BPI syntax, tool grammar, coding rules; XML-tagged sections)
  lib/engine/skills-extra.md # extra skills appended to instructions (editing instructions themselves)
- lib/engine/stream.js → Stream class; iterative state machine scans LLM output for tool markers, emits SSE chunks + tool_calls; _maxToolLen from tool registry
+ lib/engine/stream.js → ToolStream class; iterative state machine scans LLM output for tool markers, emits SSE chunks + tool_calls; owns tokenUsage, sendFinalChunk(), onError(err), emitAndEnd(text); static setSSEHeaders(res); stores res, model, compiler, session as instance props
  lib/engine/tool-defs.js → TOOLS registry (read/write/replace/ask/ls/mkdir/glob/grep/cmd/view_image/todos_add/todos_set), getIDEMapper(ide), IDE-specific prompt optimizers (vscode/terax/opencode user/tool formatters); each IDES_PROMPT_OPTIMIZER[ide] also exposes rawUser(content) — pure raw user-text extraction (no USER: prefix/attachments handling) used only for trigger matching, not prompt formatting; opencode.user returns tags.env.full verbatim when an `env` tag is present (bypassing the USER: prefix); opencode.tool(name, result) — signature now takes name (was result-only); opencode ask-tool mapping now maps question text + option array into { question, options } (was hardcoded empty questions array); terax.user/opencode.user signatures corrected to (content, messages, isNewSession) — matches the actual lib/engine/index.js call site (previous (prefix, content, messages) form didn't match how they were invoked); terax.tool now (name, result) matching call site (was result-only); terax.user returns 'USER: ' + text (prefix now applied inside the handler) and captures <env> tag content on new sessions; NEW_SESSION_START_LENGTH.opencode changed 3→2
- lib/engine/triggers.js # exports array of { triggers: string[], bpi: string, params?: string[] } entries — '$cwd' (pwd), '$save' (git status/diff), '$test' (params: ['cwd'] — full BPI tool smoke-test template); deterministic, no-reasoning first-step BPI text only, matched/emitted by ToolCompiler.matchSkill/emitSkill in lib/engine/index.js; params declares positional arg names substituted into `#{name}#` placeholders in bpi
+ lib/engine/triggers.js # exports { triggers, handleSkill } — triggers array of { triggers: string[], bpi: string, params?: string[], call?: (ctx) => string? } entries: '$cwd' (pwd), '$save' (git diff), '$req' (call writes req.body JSON to temp/captures), '$grammar' (call writes dynamicGrammar txt to temp/captures), '$test' (full tool smoke-test); handleSkill(skill, req, dynamicGrammar, parser) reads provider from parser.compiler.provider, invokes skill.call({ req, dynamicGrammar }) if defined, then parser.emitAndEnd(skill.bpi); deterministic, no-reasoning first-step BPI text only, matched by ToolCompiler.matchSkill; params declares positional arg names substituted into #{name}# placeholders in bpi
  lib/engine/templates/ # IDE tool schemas
   lib/engine/templates/vscode.json # VS Code tool definitions
   lib/engine/templates/terax.json # Terax tool definitions; includes Claude Code delegation trio — spawn_coding_agent (new terminal tab, user approves prompt), send_to_agent (follow-up instruction to active agent), read_agent_output (inspect active agent status/tail output before deciding spawn vs follow-up)
@@ -52,11 +52,11 @@ utils/ # shared utilities
  utils/logger.js → overrides console.warn (yellow), console.error (red), console.debug (dim), adds console.success (green), console.info (blue), console.debug.mix (dim with inner ANSI preserved); exports text.* color functions (dim/bold/green/cyan/yellow/blue/red)
  utils/rate-limiter.js → acquireSlot — sliding-window rate limiter (5 req / 15s per label)
  utils/sse-reader.js → readSSE — generic SSE stream parser with 1MB buffer cap
- utils/stream-helpers.js → createSendFinalChunk, createOnError — shared SSE finalizers (flush tools, emit [DONE], update session.lastUsed; onError writes error JSON to SSE stream)
  utils/har-to-capture.js → harToCapture — convert HAR files to network-capture JSON format
-- utils/extract-files.js → decodeContentParts(parts) — decode base64 data URIs from a single message's content array (image_url/file parts), returns { filename, data, size, mimeType } per file; no longer exports extractFiles/uploadExtractedFiles (file upload now driven by formatPrompt's uploadFile callback)
+ utils/extract-files.js → decodeContentParts(parts) — decode base64 data URIs from a single message's content array (image_url/file parts), returns { filename, data, size, mimeType } per file; no longer exports extractFiles/uploadExtractedFiles (file upload now driven by formatPrompt's uploadFile callback)
  utils/find-port.js → findPort(start, range=100) — scans ports via checkPort socket probe (resolves true when free) until an open one is found; isPortActive(p) — inverse of checkPort, resolves true when something is actively listening
- utils/sync-ide-config.js → async syncIdeConfig(preSelected?, port?) — syncs ZeroKey model entries into VS Code's chatLanguageModels.json; base is the existing target file's ZeroKey.models array; live-checks every existing model's port via isPortActive and drops any not currently listening; edits in place or appends the model with id ZK-{port}; non-fatal on failure utils/is-title-gen.js → isTitleGenCall(ide, messages) — detects OpenCode's title-generation utility call (first message role:system, content starts with 'You are a title generator'); tryEmitTitle(req, res, provider, session) — if detected, short-circuits response via ToolCompiler.emitTitle with session.name + withLiveTime() human-readable timestamp appended (e.g. 'My Session · Jul 23, 3:45 PM', recomputed fresh each call so switching sessions shows last-opened time), returns true (caller must return); called at the top of each provider route handler before any session/rate-limit/formatPrompt worktemp/ # runtime data: users.json, errors.txt (server error log), scratch files (not committed)
+ utils/sync-ide-config.js → async syncIdeConfig(preSelected?, port?) — syncs ZeroKey model entries into VS Code's chatLanguageModels.json; base is the existing target file's ZeroKey.models array; live-checks every existing model's port via isPortActive and drops any not currently listening; edits in place or appends the model with id ZK-{port}; non-fatal on failure utils/is-title-gen.js → isTitleGenCall(ide, messages) — detects OpenCode's title-generation utility call (first message role:system, content starts with 'You are a title generator'); tryEmitTitle(req, res, provider, session) — if detected, creates compiler+parser via compiler.getParser(res, session), calls parser.emitAndEnd with session.name + withLiveTime() human-readable timestamp appended (e.g. 'My Session · Jul 23, 3:45 PM'), returns true (caller must return); called at the top of each provider route handler before any session/rate-limit/formatPrompt work
+temp/ # runtime data: users.json, errors.txt (server error log), scratch files (not committed)
 docs/ # static docs site
  docs/index.html
  docs/logos/
@@ -113,7 +113,7 @@ POST /v1/chat/completions handler (all providers):
  → isNewSession: prepend instructions + dynamic grammar
  → acquireSlot(provider) # rate limit
  → provider API chatCompletion() → returns ReadableStream
- → StreamHandler → readSSE → parser.scan() → Stream.flush() → emitToolCalls()
+ → ToolStream → readSSE → parser.scan() → parser.flush() → emitToolCalls()
 
 ChatGPT deep flow:
  → ChatGPTAPI.initializeFromJSON(parsedFetch)
@@ -239,17 +239,26 @@ Stream buffer cap: 1MB (SSE reader)
 - Claude requires org ID extraction from URL on init; conversation UUID pre-generated client-side
 - Tools disabled per-session via disableTools flag; when disabled, instructions + dynamic grammar not prepended
 - MCP tools synced per-request via SHA256 hash comparison; hash stored on session.dynamicToolsHash, grammar cached on session._dynamicGrammarCache
-- Stream.js scanner: an open bracket immediately preceded by a backtick is treated as literal/example syntax and emitted as plain text, not parsed as a real tool call; enables literal BPI syntax in chat replies (e.g. code fences) without misfiring
-- KNOWN LIMITATION: syncDynamicTools has early return (line 67) that always returns dynamicGrammar='', skipping cache/rebuild. Entire dynamic grammar system (hash caching, _dynamicGrammarCache, grammarFromSchema, MCP tool registration) is dead code. MCP tools non-functional until this early return is removed.
+- ToolStream scanner: an open bracket immediately preceded by a backtick is treated as literal/example syntax and emitted as plain text, not parsed as a real tool call
+- KNOWN LIMITATION: syncDynamicTools has early return (line 67) that always returns dynamicGrammar='', skipping cache/rebuild. Entire dynamic grammar system is dead code. MCP tools non-functional.
 - todos_add/todos_set tools merge delta items into session.todos; cleared when all done
 - Claude instructions set via PUT /api/account_profile only on new session and only if hash changed
 - ChatGPT instructions set via PATCH /backend-api/user_system_messages only on new session (currently commented out in route)
 - write tool (vscode) deletes existing file before creating new one to avoid conflict
-- tool-defs.js: VS Code user handler reads workspace_info from current message (not session's first message); CWD prepended from workspace_info.full on new sessions; $workspace and WORKSPACE block currently commented out
-- tool-defs.js shortenToolOutput: replaces skip/cancel IDE messages with '[SKIPPED BY USER]' / '[CANCELLED BY USER]' before per-tool shortener runs
-- lib/engine/index.js: formatPrompt is async; handlers receive (mes, messages, isNewSession, uploadFile); iterates from last assistant turn forward; system handler returns empty string; user handler returns empty string for attachments (file upload handled via uploadFile); tool handler uploads view_image content parts via uploadFile; returns { prompt, skill } — skill is the matched trigger entry from lib/engine/triggers.js (or null), computed only when the last message is role 'user' (never on a 'tool' follow-up turn) via that IDE's rawUser(content) text trimmed/lowercased against skillsByTrigger
-- lib/engine/index.js: skillsByTrigger — Map<trigger, entry> built once at module load from every lib/engine/triggers.js entry's triggers array, giving O(1) lookup in ToolCompiler.matchSkill(text); ToolCompiler.emitSkill(res, parser, skill) scans skill.bpi through the caller-supplied Stream, flushes, writes [DONE], ends response
-- routes/deepseek.js, routes/claude.js, routes/chatgpt.js: each builds response headers + Stream parser before calling the provider API; if formatPrompt's skill is non-null, calls emitSkill and returns early, bypassing the provider API for that turn only; the triggering user message never reaches the provider; the follow-up turn (client sends back the tool results) has last message role 'tool', so skill is null again and the request proceeds to the real provider/LLM normally — multi-step reasoning (e.g. AGENTS.md staleness check, commit message) is handled entirely by the LLM via instructions.md, not by the trigger system, since triggers are intentionally limited to deterministic, no-reasoning first steps only
+- tool-defs.js: VS Code user handler reads workspace_info from current message; CWD prepended from workspace_info.full on new sessions
+- tool-defs.js shortenToolOutput: replaces skip/cancel IDE messages with '[SKIPPED BY USER]' / '[CANCELLED BY USER]'
+- lib/engine/index.js: formatPrompt is async; handlers receive (mes, messages, isNewSession, uploadFile); returns { prompt, skill } — skill is the matched trigger entry (or null), computed only when last message role is 'user' via rawUser(content) against skillsByTrigger
+- skillsByTrigger: Map<trigger, entry> built once at module load from triggers array, O(1) lookup
+- routes/deepseek.js, routes/claude.js, routes/chatgpt.js: each creates compiler + parser via compiler.getParser(res, session), then `if (skill) return handleSkill(skill, req, dynamicGrammar, parser)`; triggering message never reaches provider
+- ToolCompiler.setSSEHeaders(res) — static SSE header setter, moved from deleted utils/stream-helpers.js
+- compiler.getParser(res, session) — creates ToolStream pre-bound with this.provider and this as compiler
+- parser.sendFinalChunk() — flush tools, emit stop with tokenUsage, [DONE], end res, update session.lastUsed
+- parser.onError(err) — classify error, emit error delta, write error JSON, end res
+- parser.tokenUsage — mutable { prompt_tokens, completion_tokens, total_tokens }
+- emitLimitResponse(parser, waitUntilMs, prefix) — simplified from (res, req, session, ctx, ...) to just parser + message data
+- stream handlers (chatgptStreamHandler, claudeStreamHandler, streamHandler) no longer take res param, use parser.res internally
+- $req/$grammar triggers write captures server-side via skill.call({ req, dynamicGrammar }); handleSkill is trigger-agnostic, just invokes call + emitAndEnd
+- temp/captures/ — directory for $req (req_<timestamp>.json) and $grammar (grammar_<timestamp>.txt) captures
 - lib/engine/index.js: toolFormatter helper removed; tool results formatted inline as BPI(name): output
 - server.js: unhandled route errors appended to temp/errors.txt (timestamp, method+url, status, message, stack, request body) best-effort, swallows its own write failures
 - zerokey.bat: fetch/pull/rev-parse use literal 'origin' remote instead of %BRANCH% (previous version aliased origin→main incorrectly)
