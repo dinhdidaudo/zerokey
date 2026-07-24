@@ -6,7 +6,7 @@ const { toOpenAIError } = require('../utils/errors')
 const { streamHandler } = require('../core/deepseek/stream-handler')
 const { acquireSlot } = require('../utils/rate-limiter')
 const { tryEmitTitle } = require('../utils/is-title-gen')
-const { setSSEHeaders } = require('../utils/stream-helpers')
+const { setSSEHeaders, createSendFinalChunk } = require('../utils/stream-helpers')
 
 const deepseekApi = new DeepSeekAPI()
 
@@ -54,16 +54,16 @@ async function buildDeepSeekRouter(parsedFetch, session) {
 
     setSSEHeaders(res)
 
+    const parser = new ToolCompiler.Stream(res, 'deepseek', compiler, session)
+
+    if (skill) {
+      console.info(
+        `[DeepSeek] Skill trigger detected (${skill.triggers[0]}) — bypassing provider API`,
+      )
+      return ToolCompiler.emitSkill(res, parser, skill)
+    }
+
     try {
-      const parser = new ToolCompiler.Stream(res, 'deepseek', compiler, session)
-
-      if (skill) {
-        console.info(
-          `[DeepSeek] Skill trigger detected (${skill.triggers[0]}) — bypassing provider API`,
-        )
-        return ToolCompiler.emitSkill(res, parser, skill)
-      }
-
       await acquireSlot('DeepSeek')
       const deepseekStream = await deepseekApi.chatCompletion(
         session.chatSessionId,
@@ -90,9 +90,16 @@ async function buildDeepSeekRouter(parsedFetch, session) {
 
       streamHandler(res, deepseekStream, session, parser, retry)
     } catch (error) {
-      if (res.headersSent) return
       console.error(`[DeepSeek] Route error: ${error.message}`)
       const err = toOpenAIError(error, 'DeepSeek')
+
+      if (res.headersSent) {
+        parser.scan(`\n\n⚠ ${err.error.message}${err.error.action ? ' ' + err.error.action : ''}\n`)
+        const sendFinalChunk = createSendFinalChunk(res, session, parser, {})
+        sendFinalChunk()
+        return
+      }
+
       return res.status(err.error.status || 500).json(err)
     }
   })
