@@ -1,18 +1,19 @@
-require('./utils/logger')
-
 const fs = require('fs')
 const path = require('path')
+
 const express = require('express')
+
 const infoRouter = require('./routes/info')
 const buildModelsRouter = require('./routes/models')
 const buildHealthRouter = require('./routes/health')
 const buildRouter = require('./core/chat-router')
-
 const { CONFIG } = require('./config/constants')
 const { SessionSelector } = require('./core/session-selector')
 const { toOpenAIError } = require('./utils/errors')
 const { findPort } = require('./utils/find-port')
 const { syncIdeConfig } = require('./utils/sync-ide-config')
+
+require('./utils/logger')
 
 const app = express()
 

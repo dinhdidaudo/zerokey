@@ -1,5 +1,5 @@
 const { readSSE } = require('../../utils/sse-reader')
-const { createSendFinalChunk, createOnError } = require('../../utils/stream-helpers')
+const { setupStreamHandlers } = require('../../utils/stream-helpers')
 
 /**
  * DeepSeek SSE Stream Handler
@@ -12,8 +12,7 @@ const { createSendFinalChunk, createOnError } = require('../../utils/stream-help
  */
 function streamHandler(res, stream, session, parser, retry) {
   const tokenUsage = {}
-  const sendFinalChunk = createSendFinalChunk(res, session, parser, tokenUsage)
-  const onError = createOnError(res, parser, 'DeepSeek')
+  const { sendFinalChunk, onError } = setupStreamHandlers(res, session, parser, 'DeepSeek', tokenUsage)
   let cancelled = false
   let finished = false
 

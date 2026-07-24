@@ -1,6 +1,8 @@
 const https = require('https')
-const nodeFetch = require('node-fetch')
 const crypto = require('crypto')
+
+const nodeFetch = require('node-fetch')
+
 const { CookieJar } = require('../../utils/cookie-jar')
 
 /**

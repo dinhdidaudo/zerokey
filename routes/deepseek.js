@@ -1,12 +1,12 @@
 const express = require('express')
-const ToolCompiler = require('../lib/engine')
 
+const ToolCompiler = require('../lib/engine')
 const { DeepSeekAPI } = require('../core/deepseek/api')
-const { toOpenAIError } = require('../utils/errors')
 const { streamHandler } = require('../core/deepseek/stream-handler')
 const { acquireSlot } = require('../utils/rate-limiter')
+const { setSSEHeaders } = require('../utils/stream-helpers')
+const { validateMessages, handleRouteError } = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
-const { setSSEHeaders, createSendFinalChunk } = require('../utils/stream-helpers')
 
 const deepseekApi = new DeepSeekAPI()
 
@@ -23,18 +23,7 @@ async function buildDeepSeekRouter(parsedFetch, session) {
 
     const toolCalling = session.toolCalling ?? true
 
-    if (!messages || messages.length === 0) {
-      return res
-        .status(400)
-        .json(
-          toOpenAIError(
-            400,
-            'messages is required and must be a non-empty array',
-            'invalid_request_error',
-            'missing_messages',
-          ),
-        )
-    }
+    if (!validateMessages(messages, res)) return
 
     // Extract and upload files from messages
     const fileIds = []
@@ -60,7 +49,7 @@ async function buildDeepSeekRouter(parsedFetch, session) {
       console.info(
         `[DeepSeek] Skill trigger detected (${skill.triggers[0]}) — bypassing provider API`,
       )
-      return ToolCompiler.emitSkill(res, parser, skill)
+      return ToolCompiler.emitAndEnd(res, parser, skill.bpi)
     }
 
     try {
@@ -90,17 +79,7 @@ async function buildDeepSeekRouter(parsedFetch, session) {
 
       streamHandler(res, deepseekStream, session, parser, retry)
     } catch (error) {
-      console.error(`[DeepSeek] Route error: ${error.message}`)
-      const err = toOpenAIError(error, 'DeepSeek')
-
-      if (res.headersSent) {
-        parser.scan(`\n\n⚠ ${err.error.message}${err.error.action ? ' ' + err.error.action : ''}\n`)
-        const sendFinalChunk = createSendFinalChunk(res, session, parser, {})
-        sendFinalChunk()
-        return
-      }
-
-      return res.status(err.error.status || 500).json(err)
+      return handleRouteError(error, 'DeepSeek', res, session, parser)
     }
   })
 

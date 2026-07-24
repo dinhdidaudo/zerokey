@@ -1,5 +1,5 @@
 const { readSSE } = require('../../utils/sse-reader')
-const { createSendFinalChunk, createOnError } = require('../../utils/stream-helpers')
+const { setupStreamHandlers } = require('../../utils/stream-helpers')
 
 /**
  * ChatGPT SSE Stream Handler
@@ -15,8 +15,7 @@ const { createSendFinalChunk, createOnError } = require('../../utils/stream-help
  */
 async function chatgptStreamHandler(res, stream, session, parser) {
   const tokenUsage = {}
-  const sendFinalChunk = createSendFinalChunk(res, session, parser, tokenUsage)
-  const onError = createOnError(res, parser, 'ChatGPT')
+  const { sendFinalChunk, onError } = setupStreamHandlers(res, session, parser, 'ChatGPT', tokenUsage)
 
   const onData = (data) => {
     if (!data) return

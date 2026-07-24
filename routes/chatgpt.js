@@ -1,13 +1,13 @@
 const express = require('express')
+
+const ToolCompiler = require('../lib/engine')
 const instructions = require('../lib/engine/instructions')
 const { ChatGPTAPI } = require('../core/chatgpt/api')
 const { chatgptStreamHandler } = require('../core/chatgpt/stream-handler')
-const { toOpenAIError } = require('../utils/errors')
-const ToolCompiler = require('../lib/engine')
 const { acquireSlot } = require('../utils/rate-limiter')
-const { setChatGPTInstructions } = require('../core/chatgpt/set-instructions')
-const { tryEmitTitle } = require('../utils/is-title-gen')
 const { setSSEHeaders } = require('../utils/stream-helpers')
+const { validateMessages, handleRouteError } = require('../utils/route-helpers')
+const { tryEmitTitle } = require('../utils/is-title-gen')
 
 const chatgptApi = new ChatGPTAPI()
 
@@ -24,18 +24,7 @@ async function buildChatGPTRouter(parsedFetch, session, userData = null) {
 
     const toolCalling = session.toolCalling ?? true
     const model = session.model || 'auto'
-    if (!messages || messages.length === 0) {
-      return res
-        .status(400)
-        .json(
-          toOpenAIError(
-            400,
-            'messages is required and must be a non-empty array',
-            'invalid_request_error',
-            'missing_messages',
-          ),
-        )
-    }
+    if (!validateMessages(messages, res)) return
 
     const attachments = []
     const uploadFile = async (f) => {
@@ -58,7 +47,7 @@ async function buildChatGPTRouter(parsedFetch, session, userData = null) {
       console.info(
         `[ChatGPT] Skill trigger detected (${skill.triggers[0]}) — bypassing provider API`,
       )
-      return ToolCompiler.emitSkill(res, parser, skill)
+      return ToolCompiler.emitAndEnd(res, parser, skill.bpi)
     }
 
     if (isNewSession && toolCalling) {
@@ -79,10 +68,7 @@ async function buildChatGPTRouter(parsedFetch, session, userData = null) {
 
       chatgptStreamHandler(res, stream, session, parser)
     } catch (error) {
-      if (res.headersSent) return
-      console.error(`[ChatGPT] Route error: ${error.message}`)
-      const err = toOpenAIError(error, 'ChatGPT')
-      return res.status(err.error.status || 500).json(err)
+      return handleRouteError(error, 'ChatGPT', res, session, parser)
     }
   })
 

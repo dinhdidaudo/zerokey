@@ -1,15 +1,15 @@
 const express = require('express')
+
+const ToolCompiler = require('../lib/engine')
 const { ClaudeAPI } = require('../core/claude/api')
 const { claudeStreamHandler } = require('../core/claude/stream-handler')
-const { toOpenAIError } = require('../utils/errors')
-const ToolCompiler = require('../lib/engine')
 const { setClaudeInstructions } = require('../core/claude/set-instructions')
-const { extractFiles, uploadFiles } = require('../utils/extract-files')
-
-const claudeApi = new ClaudeAPI()
 const { acquireSlot } = require('../utils/rate-limiter')
 const { setSSEHeaders, createSendFinalChunk } = require('../utils/stream-helpers')
+const { validateMessages, handleRouteError } = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
+
+const claudeApi = new ClaudeAPI()
 
 async function buildClaudeRouter(parsedFetch, session, userData = null) {
   console.debug('[Claude] Initializing from parsed capture JSON')
@@ -25,18 +25,7 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
     const toolCalling = session.toolCalling ?? true
     const model = session.model
 
-    if (!messages || messages.length === 0) {
-      return res
-        .status(400)
-        .json(
-          toOpenAIError(
-            400,
-            'messages is required and must be a non-empty array',
-            'invalid_request_error',
-            'missing_messages',
-          ),
-        )
-    }
+    if (!validateMessages(messages, res)) return
 
     if (userData?.waitUntil && userData.waitUntil > Date.now()) {
       emitLimitResponse(
@@ -67,7 +56,7 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
       console.info(
         `[Claude] Skill trigger detected (${skill.triggers[0]}) — bypassing provider API`,
       )
-      return ToolCompiler.emitSkill(res, parser, skill)
+      return ToolCompiler.emitAndEnd(res, parser, skill.bpi)
     }
 
     if (isNewSession) {
@@ -186,17 +175,7 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
         }
       } catch {}
 
-      const err = toOpenAIError(error, 'Claude')
-
-      if (res.headersSent) {
-        const parser = new ToolCompiler.Stream(res, 'claude', compiler, session)
-        parser.scan(`\n\n⚠ ${err.error.message}${err.error.action ? ' ' + err.error.action : ''}\n`)
-        const sendFinalChunk = createSendFinalChunk(res, session, parser, {})
-        sendFinalChunk()
-        return
-      }
-
-      return res.status(err.error.status || 500).json(err)
+      return handleRouteError(error, 'Claude', res, session, parser)
     }
   })
 

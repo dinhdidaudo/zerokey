@@ -1,5 +1,7 @@
 const https = require('https')
+
 const nodeFetch = require('node-fetch')
+
 const { CookieJar } = require('../../utils/cookie-jar')
 const { DeepSeekPOW } = require('./pow')
 

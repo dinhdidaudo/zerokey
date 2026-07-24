@@ -48,4 +48,15 @@ function setSSEHeaders(res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
 }
 
-module.exports = { createSendFinalChunk, createOnError, setSSEHeaders }
+function setupStreamHandlers(res, session, parser, provider, tokenUsage = {}) {
+  const sendFinalChunk = createSendFinalChunk(res, session, parser, tokenUsage)
+  const onError = createOnError(res, parser, provider)
+  return { sendFinalChunk, onError }
+}
+
+module.exports = {
+  createSendFinalChunk,
+  createOnError,
+  setSSEHeaders,
+  setupStreamHandlers,
+}

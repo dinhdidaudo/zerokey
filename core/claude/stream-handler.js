@@ -1,5 +1,5 @@
 const { readSSE } = require('../../utils/sse-reader')
-const { createSendFinalChunk, createOnError } = require('../../utils/stream-helpers')
+const { setupStreamHandlers } = require('../../utils/stream-helpers')
 
 /**
  * @param {object} w - window object from Claude API { utilization, resets_at }
@@ -39,8 +39,7 @@ function formatWindow(w, resetFormat = 'time') {
 async function claudeStreamHandler(res, stream, session, parser, cb) {
   const tokenUsage = {}
   let limitReached = null
-  const sendFinalChunk = createSendFinalChunk(res, session, parser, tokenUsage)
-  const onError = createOnError(res, parser, 'Claude')
+  const { sendFinalChunk, onError } = setupStreamHandlers(res, session, parser, 'Claude', tokenUsage)
 
   await readSSE(stream, {
     onData: (parsed) => {

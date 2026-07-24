@@ -27,7 +27,7 @@ function isTitleGenCall(ide, messages) {
 
 /**
  * If `messages` is an OpenCode title-generation call, short-circuits the
- * response with the session's own name (see ToolCompiler.emitTitle) and
+ * response with the session's own name and
  * returns true. Otherwise does nothing and returns false — caller proceeds
  * with its normal request handling.
  *
@@ -47,7 +47,7 @@ function tryEmitTitle(req, res, provider, session) {
   const compiler = new ToolCompiler(req.ide, provider)
   setSSEHeaders(res)
   const parser = new ToolCompiler.Stream(res, provider, compiler, session)
-  ToolCompiler.emitTitle(res, parser, withLiveTime(session.name))
+  ToolCompiler.emitAndEnd(res, parser, withLiveTime(session.name) || 'New session')
   return true
 }
 
