@@ -239,6 +239,7 @@ Stream buffer cap: 1MB (SSE reader)
 - Claude requires org ID extraction from URL on init; conversation UUID pre-generated client-side
 - Tools disabled per-session via disableTools flag; when disabled, instructions + dynamic grammar not prepended
 - MCP tools synced per-request via SHA256 hash comparison; hash stored on session.dynamicToolsHash, grammar cached on session._dynamicGrammarCache
+- Stream.js scanner: an open bracket immediately preceded by a backtick is treated as literal/example syntax and emitted as plain text, not parsed as a real tool call; enables literal BPI syntax in chat replies (e.g. code fences) without misfiring
 - KNOWN LIMITATION: syncDynamicTools has early return (line 67) that always returns dynamicGrammar='', skipping cache/rebuild. Entire dynamic grammar system (hash caching, _dynamicGrammarCache, grammarFromSchema, MCP tool registration) is dead code. MCP tools non-functional until this early return is removed.
 - todos_add/todos_set tools merge delta items into session.todos; cleared when all done
 - Claude instructions set via PUT /api/account_profile only on new session and only if hash changed
