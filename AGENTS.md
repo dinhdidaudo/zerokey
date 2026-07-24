@@ -262,6 +262,7 @@ Stream buffer cap: 1MB (SSE reader)
 - DeepSeek route: modelType resolved only on new session (session.model || 'expert'); passed as null otherwise
 - view_image tool: added to TOOLS registry, BPI-LIST, instructions.md grammar, SHORTENERS (no-op), and vscode IDE mapping (params: { path: 'filePath' })
 - getAllTags in tool-defs.js returns object with _len property counting tags; VS Code user handler uses tags._len to distinguish tagged vs plain content
+- tool-defs.js: filterAttachments(content) drops redundant full-file `<attachment>` block when a `User's active selection` block is also present in the same `<attachments>` tag (VS Code sends both on active text selection); vscode.user handler applies it to tags.attachments.content before pushing
 
 #EXTENSION-POINTS
 - Add new provider: create core/provider/ with api.js + stream-handler.js, add route builder in routes/, update session-selector _stepProviderSelection, add case in chat-router mount()
