@@ -184,7 +184,7 @@ class DeepSeekAPI {
    * @param {string} fileName
    * @returns {Promise<string>} file_id
    */
-  async _pollFile(fileId, fileName) {
+  async _pollFile(fileId, _fileName) {
     const maxAttempts = 30
     const delay = 5000
 

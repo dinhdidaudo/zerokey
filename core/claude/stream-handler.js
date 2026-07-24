@@ -39,7 +39,13 @@ function formatWindow(w, resetFormat = 'time') {
 async function claudeStreamHandler(res, stream, session, parser, cb) {
   const tokenUsage = {}
   let limitReached = null
-  const { sendFinalChunk, onError } = setupStreamHandlers(res, session, parser, 'Claude', tokenUsage)
+  const { sendFinalChunk, onError } = setupStreamHandlers(
+    res,
+    session,
+    parser,
+    'Claude',
+    tokenUsage,
+  )
 
   await readSSE(stream, {
     onData: (parsed) => {

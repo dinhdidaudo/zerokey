@@ -1,5 +1,3 @@
-const fs = require('fs')
-
 /**
  * Decode base64 data URIs from a message's content parts.
  * Returns an array of file objects ready for upload.

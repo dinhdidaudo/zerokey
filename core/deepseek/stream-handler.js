@@ -12,7 +12,13 @@ const { setupStreamHandlers } = require('../../utils/stream-helpers')
  */
 function streamHandler(res, stream, session, parser, retry) {
   const tokenUsage = {}
-  const { sendFinalChunk, onError } = setupStreamHandlers(res, session, parser, 'DeepSeek', tokenUsage)
+  const { sendFinalChunk, onError } = setupStreamHandlers(
+    res,
+    session,
+    parser,
+    'DeepSeek',
+    tokenUsage,
+  )
   let cancelled = false
   let finished = false
 
@@ -25,7 +31,7 @@ function streamHandler(res, stream, session, parser, retry) {
       console.debug('[DeepSeek] Retrying...')
       try {
         stream.destroy()
-      } catch (_) {}
+      } catch {}
       retry()
         .then((newStream) => {
           streamHandler(res, newStream, session, parser, retry)

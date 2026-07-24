@@ -15,7 +15,13 @@ const { setupStreamHandlers } = require('../../utils/stream-helpers')
  */
 async function chatgptStreamHandler(res, stream, session, parser) {
   const tokenUsage = {}
-  const { sendFinalChunk, onError } = setupStreamHandlers(res, session, parser, 'ChatGPT', tokenUsage)
+  const { sendFinalChunk, onError } = setupStreamHandlers(
+    res,
+    session,
+    parser,
+    'ChatGPT',
+    tokenUsage,
+  )
 
   const onData = (data) => {
     if (!data) return

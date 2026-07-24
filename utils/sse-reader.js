@@ -26,7 +26,7 @@ async function readSSE(stream, { onData, onDone, onError }) {
     let data = dataStr
     try {
       data = JSON.parse(dataStr)
-    } catch (_) {
+    } catch {
       return
     }
 

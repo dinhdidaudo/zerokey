@@ -10,6 +10,8 @@ temp
 !.yarn/sdks
 !.yarn/versions
 
+CHANGELOG.md
+
 # Environment
 .env
 .env.*

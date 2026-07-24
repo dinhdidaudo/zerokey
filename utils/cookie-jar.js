@@ -41,7 +41,7 @@ class CookieJar {
   }
 
   /** Capture from fetch-style Headers object (getSetCookie + fallback) */
-  captureFromFetchHeaders(headers, label = '') {
+  captureFromFetchHeaders(headers, _label = '') {
     const setCookieHeaders = headers.getSetCookie ? headers.getSetCookie() : []
 
     if (setCookieHeaders.length === 0) {
@@ -62,7 +62,7 @@ class CookieJar {
   }
 
   /** Capture from raw Node.js http.IncomingMessage headers */
-  captureFromRawHeaders(rawHeaders, label = '') {
+  captureFromRawHeaders(rawHeaders, _label = '') {
     const setCookieHeaders = rawHeaders['set-cookie']
     if (!setCookieHeaders) return 0
 

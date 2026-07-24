@@ -278,7 +278,7 @@ class ClaudeAPI {
   /**
    * Build headers for a request.
    */
-  _buildHeaders(overrides = {}, targetPath = '') {
+  _buildHeaders(overrides = {}, _targetPath = '/') {
     const src = this._headers
     const cookieStr = this._cookies.toString()
 

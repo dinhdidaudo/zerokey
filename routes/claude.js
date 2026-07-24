@@ -168,7 +168,7 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
             session,
             { compiler },
             userData.waitUntil,
-            (resetTime, mins) => `This user's usage quota has been reached`,
+            `This user's usage quota has been reached`,
           )
 
           return

@@ -11,7 +11,7 @@ const { tryEmitTitle } = require('../utils/is-title-gen')
 
 const chatgptApi = new ChatGPTAPI()
 
-async function buildChatGPTRouter(parsedFetch, session, userData = null) {
+async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
   console.debug('[ChatGPT] Initializing from parsed capture JSON')
   await chatgptApi.initializeFromJSON(parsedFetch)
 
