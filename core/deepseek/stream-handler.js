@@ -18,6 +18,9 @@ function streamHandler(stream, session, parser, retry) {
     console.error(`[DeepSeek] Stream error: ${reason}`)
     parser.scan(`\n\n⚠ Stream error: ${reason}`)
 
+    if (reason === 'Uploading files or images isn’t supported in this mode.')
+      return parser.sendFinalChunk()
+
     if (retry) {
       console.debug('[DeepSeek] Retrying...')
       try {

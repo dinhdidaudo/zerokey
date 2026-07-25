@@ -26,22 +26,17 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
     const model = session.model || 'auto'
     if (!validateMessages(messages, res)) return
 
-    const attachments = []
-    const uploadFile = async (f) => {
-      const attachment = await chatgptApi.uploadFile(f)
-      attachments.push(attachment)
-      return attachment.id
-    }
     const compiler = new ToolCompiler(req.ide, 'chatgpt')
+    ToolCompiler.setSSEHeaders(res)
+    const parser = compiler.getParser(res, session)
+
+    const attachments = []
+    parser.bindUploader(chatgptApi, attachments)
     const isNewSession = session.parentMessageId == null
 
     const { dynamicGrammar } = compiler.syncDynamicTools(req.body.tools || [], session)
 
-    let { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, uploadFile, session)
-
-    ToolCompiler.setSSEHeaders(res)
-
-    const parser = compiler.getParser(res, session)
+    let { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, session, parser)
 
     if (skill) return handleSkill(skill, req, dynamicGrammar, parser)
 

@@ -6,6 +6,7 @@ const { streamHandler } = require('../core/deepseek/stream-handler')
 const { acquireSlot } = require('../utils/rate-limiter')
 const { validateMessages, handleRouteError } = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
+
 const { handleSkill } = require('../lib/engine/triggers')
 
 const deepseekApi = new DeepSeekAPI()
@@ -25,25 +26,24 @@ async function buildDeepSeekRouter(parsedFetch, session) {
 
     if (!validateMessages(messages, res)) return
 
-    // Extract and upload files from messages
-    const fileIds = []
-    const uploadFile = async (f) => fileIds.push(await deepseekApi.uploadFile(f))
-
     const compiler = new ToolCompiler(req.ide, 'deepseek')
     const isNewSession = session.parentMessageId == null
     const modelType = isNewSession ? session.model || 'expert' : null
 
+    ToolCompiler.setSSEHeaders(res)
+    const parser = compiler.getParser(res, session)
+
+    // Extract and upload files from messages
+    const fileIds = []
+    parser.bindUploader(deepseekApi, fileIds)
+
     const { dynamicGrammar } = compiler.syncDynamicTools(req.body.tools || [], session)
 
-    let { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, uploadFile, session)
+    let { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, session, parser)
 
     if (isNewSession) {
       prompt = toolCalling ? compiler.buildPrompt(prompt, dynamicGrammar) : prompt
     }
-
-    ToolCompiler.setSSEHeaders(res)
-
-    const parser = compiler.getParser(res, session)
 
     if (skill) return handleSkill(skill, req, dynamicGrammar, parser)
 

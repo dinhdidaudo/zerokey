@@ -7,6 +7,7 @@ const { setClaudeInstructions } = require('../core/claude/set-instructions')
 const { acquireSlot } = require('../utils/rate-limiter')
 const { validateMessages, handleRouteError } = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
+
 const { handleSkill } = require('../lib/engine/triggers')
 
 const claudeApi = new ClaudeAPI()
@@ -41,17 +42,12 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
     }
 
     const fileIds = []
-    const uploadFile = async (f) => fileIds.push(await claudeApi.uploadFile(f))
+    parser.bindUploader(claudeApi, fileIds)
     const isNewSession = session.parentMessageId == null
 
     const { dynamicGrammar } = compiler.syncDynamicTools(req.body.tools || [], session)
 
-    const { prompt, skill } = await compiler.formatPrompt(
-      messages,
-      isNewSession,
-      uploadFile,
-      session,
-    )
+    const { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, session, parser)
 
     if (skill) return handleSkill(skill, req, dynamicGrammar, parser)
 

@@ -1,19 +1,4 @@
 /**
- * OpenAI-compatible error factory with user-friendly messages.
- *
- * Error categories:
- *   - overloaded         → provider is overloaded, try later or switch
- *   - session_expired    → re-capture fetch from browser
- *   - rate_limited       → wait or switch sessions
- *   - cloudflare_block   → browser fingerprint rejected
- *   - auth_failed        → credentials invalid / session revoked
- *   - network            → connection failed / timeout
- *   - invalid_request    → bad input from client
- *   - provider_error     → upstream returned an error
- *   - internal           → unexpected server error
- */
-
-/**
  * Maps raw provider errors to user-friendly messages with recovery actions.
  */
 function classifyError(error, provider) {
