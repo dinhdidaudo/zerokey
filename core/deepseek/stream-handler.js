@@ -1,4 +1,8 @@
 const { readSSE } = require('../../utils/sse-reader')
+const RETRY_REASONS = {
+  'Messages too frequent. Try again later.': true,
+  'Server is busy. Try again later.': true,
+}
 
 /**
  * DeepSeek SSE Stream Handler
@@ -18,10 +22,7 @@ function streamHandler(stream, session, parser, retry) {
     console.error(`[DeepSeek] Stream error: ${reason}`)
     parser.scan(`\n\n⚠ Stream error: ${reason}`)
 
-    if (reason === 'Uploading files or images isn’t supported in this mode.')
-      return parser.sendFinalChunk()
-
-    if (retry) {
+    if (RETRY_REASONS[reason] && retry) {
       console.debug('[DeepSeek] Retrying...')
       try {
         stream.destroy()
