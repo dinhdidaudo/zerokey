@@ -46,7 +46,12 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
 
     const { dynamicGrammar } = compiler.syncDynamicTools(req.body.tools || [], session)
 
-    const { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, uploadFile)
+    const { prompt, skill } = await compiler.formatPrompt(
+      messages,
+      isNewSession,
+      uploadFile,
+      session,
+    )
 
     if (skill) return handleSkill(skill, req, dynamicGrammar, parser)
 

@@ -35,7 +35,7 @@ async function buildDeepSeekRouter(parsedFetch, session) {
 
     const { dynamicGrammar } = compiler.syncDynamicTools(req.body.tools || [], session)
 
-    let { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, uploadFile)
+    let { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, uploadFile, session)
 
     if (isNewSession) {
       prompt = toolCalling ? compiler.buildPrompt(prompt, dynamicGrammar) : prompt

@@ -37,7 +37,7 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
 
     const { dynamicGrammar } = compiler.syncDynamicTools(req.body.tools || [], session)
 
-    let { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, uploadFile)
+    let { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, uploadFile, session)
 
     ToolCompiler.setSSEHeaders(res)
 
