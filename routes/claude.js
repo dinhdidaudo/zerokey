@@ -141,7 +141,7 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
         }
       } catch {}
 
-      return handleRouteError(error, 'Claude', res, session, parser)
+      return handleRouteError(error, parser)
     }
   })
 

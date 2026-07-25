@@ -74,7 +74,7 @@ async function buildDeepSeekRouter(parsedFetch, session) {
 
       streamHandler(deepseekStream, session, parser, retry)
     } catch (error) {
-      return handleRouteError(error, 'DeepSeek', res, session, parser)
+      return handleRouteError(error, parser)
     }
   })
 

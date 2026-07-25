@@ -20,35 +20,8 @@ function classifyError(error, provider) {
   const msg = (error?.message || String(error) || '').toLowerCase()
   const statusCode = error?.code || error?.statusCode || error?.status || 0
 
-  // ── Provider overloaded ───────────────────────────────
-  if (
-    msg.includes('overloaded') ||
-    msg.includes('overloaded_error') ||
-    msg.includes('over capacity')
-  ) {
-    return {
-      category: 'overloaded',
-      message: `${provider} is currently overloaded.`,
-      action:
-        'Try again in a few minutes, or switch to a different provider (restart the server to change).',
-      status: 529,
-    }
-  }
-
   // ── Session expired / auth failures ────────────────────
-  if (
-    statusCode === 401 ||
-    statusCode === 403 ||
-    msg.includes('unauthorized') ||
-    msg.includes('forbidden') ||
-    msg.includes('auth') ||
-    msg.includes('login') ||
-    msg.includes('session') ||
-    msg.includes('expired') ||
-    msg.includes('invalid token') ||
-    msg.includes('proof token') ||
-    msg.includes('sentinel')
-  ) {
+  if (statusCode === 401 || statusCode === 403) {
     return {
       category: 'session_expired',
       message: `Your ${provider} browser session has expired or is invalid.`,
@@ -58,38 +31,13 @@ function classifyError(error, provider) {
   }
 
   // ── Rate limiting ──────────────────────────────────────
-  if (
-    statusCode === 429 ||
-    msg.includes('rate') ||
-    msg.includes('too many') ||
-    msg.includes('limit')
-  ) {
+  if (statusCode === 429) {
     return {
       category: 'rate_limited',
       message: `You've hit ${provider}'s rate limit.`,
       action:
         'Wait a few minutes and try again, or switch to a different session in the startup wizard.',
       status: 429,
-    }
-  }
-
-  // ── Cloudflare / bot detection ─────────────────────────
-  if (
-    msg.includes('cloudflare') ||
-    msg.includes('cf-') ||
-    msg.includes('challenge') ||
-    msg.includes('captcha') ||
-    msg.includes('1020') ||
-    msg.includes('just a moment') ||
-    msg.includes('are you human') ||
-    msg.includes('browser check')
-  ) {
-    return {
-      category: 'cloudflare_block',
-      message: `${provider} is showing a Cloudflare challenge — your browser fingerprint was rejected.`,
-      action:
-        'Re-capture a fresh fetch() from your browser and restart. Make sure you are logged in and can chat normally in the browser first.',
-      status: 403,
     }
   }
 

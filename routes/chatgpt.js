@@ -63,7 +63,7 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
 
       chatgptStreamHandler(stream, session, parser)
     } catch (error) {
-      return handleRouteError(error, 'ChatGPT', res, session, parser)
+      return handleRouteError(error, parser)
     }
   })
 

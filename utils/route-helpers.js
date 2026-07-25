@@ -17,17 +17,12 @@ function validateMessages(messages, res) {
   return true
 }
 
-function handleRouteError(error, provider, res, session, parser) {
+function handleRouteError(error, parser) {
+  const provider = parser.compiler.provider
+
   console.error(`[${provider}] Route error: ${error.message}`)
   const err = toOpenAIError(error, provider)
-
-  if (res.headersSent) {
-    parser.scan(`\n\n⚠ ${err.error.message}${err.error.action ? ' ' + err.error.action : ''}\n`)
-    parser.sendFinalChunk()
-    return
-  }
-
-  res.status(err.error.status || 500).json(err)
+  parser.emitAndEnd(`\n\n⚠ ${err.error.message}${err.error.action ? ' ' + err.error.action : ''}\n`)
 }
 
 module.exports = { validateMessages, handleRouteError }
