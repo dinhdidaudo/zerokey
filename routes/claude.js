@@ -6,8 +6,6 @@ const { claudeStreamHandler } = require('../core/claude/stream-handler')
 const { setClaudeInstructions } = require('../core/claude/set-instructions')
 const { acquireSlot } = require('../utils/rate-limiter')
 const { validateMessages } = require('../utils/route-helpers')
-const { tryEmitTitle } = require('../utils/is-title-gen')
-
 const claudeApi = new ClaudeAPI()
 
 async function buildClaudeRouter(parsedFetch, session, userData = null) {
@@ -19,14 +17,12 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
   router.post('/', async (req, res) => {
     const { messages = [], tools, reasoning_effort: reasoningEffort = null } = req.body
 
-    if (tryEmitTitle(req, res, 'claude', session)) return
-
-    const model = session.model
-
     if (!validateMessages(messages, res)) return
 
     StreamPipeline.setSSEHeaders(res)
-    const pipeline = new StreamPipeline(res, session, 'claude', req.ide)
+    const pipeline = new StreamPipeline(res, session, 'claude', req.ide, messages)
+    const activeSession = pipeline.session
+    const model = activeSession.model
 
     if (userData?.waitUntil && userData.waitUntil > Date.now()) {
       emitLimitResponse(
@@ -37,7 +33,7 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
       return
     }
 
-    if (pipeline.isNewSession) {
+    if (pipeline.isNewSession && !pipeline.rawMode) {
       await setClaudeInstructions(claudeApi, userData, pipeline.toolCalling)
       pipeline.haveInstructionsAPI = true
     }
@@ -53,19 +49,19 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
     try {
       const { stream, chatSessionId } = await claudeApi.chatCompletion(
         prompt,
-        session.chatSessionId,
-        session.parentMessageId,
+        activeSession.chatSessionId,
+        activeSession.parentMessageId,
         model,
         [],
         fileIds,
         reasoningEffort,
       )
 
-      if (chatSessionId && !session.chatSessionId) {
-        session.chatSessionId = chatSessionId
+      if (chatSessionId && !activeSession.chatSessionId) {
+        activeSession.chatSessionId = chatSessionId
       }
 
-      await claudeStreamHandler(stream, session, pipeline, async (limitReached) => {
+      await claudeStreamHandler(stream, activeSession, pipeline, async (limitReached) => {
         if (limitReached?.resets_at) {
           userData.waitUntil = limitReached.resets_at * 1000
           userData.waitReason = 'Claude rate limit'
@@ -90,14 +86,14 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
             const summaryPrompt = `Please write a concise but complete summary of this entire conversation — so it can be pasted into a fresh session to resume work seamlessly.`
             const { stream: summaryStream } = await claudeApi.chatCompletion(
               summaryPrompt,
-              session.chatSessionId,
-              session.parentMessageId,
+              activeSession.chatSessionId,
+              activeSession.parentMessageId,
               model,
               [],
             )
 
             pipeline.scan('\n\n````text\n')
-            await claudeStreamHandler(summaryStream, session, pipeline, () => {
+            await claudeStreamHandler(summaryStream, activeSession, pipeline, () => {
               pipeline.scan('\n````')
               pipeline.scan(limitMessageText(resetTime, mins))
               pipeline.sendFinalChunk()

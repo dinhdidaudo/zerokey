@@ -10,8 +10,8 @@ class DeepSeekAPI {
 
   constructor(options = {}) {
     this._log = options.log !== false
-    this.powSolver = null
     this._cookies = new CookieJar()
+    this._powSolver = new DeepSeekPOW()
     this._headers = {}
     this._httpAgent = new https.Agent({
       keepAlive: true,
@@ -21,9 +21,8 @@ class DeepSeekAPI {
     })
   }
 
-  async initialize(headers = {}) {
-    this.powSolver = new DeepSeekPOW()
-    await this.powSolver.initialize()
+  async initializeFromJSON({ headers }) {
+    await this._powSolver.initialize()
 
     // Store all captured headers for later reuse
     this._headers = { ...headers }
@@ -36,6 +35,8 @@ class DeepSeekAPI {
         console.debug(`[DeepSeek] Seeded cookie jar with ${count} initial cookies`)
       }
     }
+
+    if (this._log) console.debug('[DeepSeek] Initialized from capture JSON')
   }
 
   async createChatSession() {
@@ -73,7 +74,7 @@ class DeepSeekAPI {
     refFileIds = [],
   ) {
     const challenge = await this._getPowChallenge()
-    const powResponse = await this.powSolver.solveChallenge(challenge)
+    const powResponse = await this._powSolver.solveChallenge(challenge)
 
     const jsonData = {
       chat_session_id: chatSessionId,
@@ -127,7 +128,7 @@ class DeepSeekAPI {
   async uploadFile(file) {
     // 1. Get POW challenge for file upload
     const challenge = await this._getPowChallenge('/api/v0/file/upload_file')
-    const powResponse = await this.powSolver.solveChallenge(challenge)
+    const powResponse = await this._powSolver.solveChallenge(challenge)
 
     const { filename, data, size } = file
 

@@ -1,22 +1,12 @@
-const fs = require('fs')
 const path = require('path')
 const { injectMcpAliases } = require('./mcp/inject')
 const { buildAutoAliasMaps, hashTools } = require('./mcp/auto')
 const BROWSER_MCP = require('./mcp/browser')
+const { captureRequest } = require('../utils/capture-request')
 
-const CAPTURES_DIR = path.join(__dirname, '..', 'temp', 'captures')
-
-function ensureDir() {
-  if (!fs.existsSync(CAPTURES_DIR)) {
-    fs.mkdirSync(CAPTURES_DIR, { recursive: true })
-  }
-}
-
-function timestamp() {
-  const d = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`
-}
+// $test scratch root: always the server's own cwd + /test, regardless of
+// where the request came from — never user-supplied.
+const TEST_ROOT = path.join(__dirname, '..')
 
 // Alias-map registry keyed by the same tag used in session.mcpInjected.
 const MCP_ALIAS_MAPS = { $browser: BROWSER_MCP }
@@ -148,12 +138,7 @@ const triggers = [
   {
     trigger: '$req',
     bpi: 'See server temp/captures folder',
-    call: ({ req }) => {
-      ensureDir()
-      const name = `req_${timestamp()}.json`
-      fs.writeFileSync(path.join(CAPTURES_DIR, name), JSON.stringify(req.body, null, 2))
-      return name
-    },
+    call: ({ req }) => captureRequest(req),
   },
   {
     trigger: '$browser',
@@ -173,8 +158,13 @@ const triggers = [
   },
   {
     trigger: '$test',
-    params: ['cwd'],
-    bpi: `Testing all basic tools...
+    get bpi() {
+      return TEST_TEMPLATE.split('#{cwd}#').join(TEST_ROOT)
+    },
+  },
+]
+
+const TEST_TEMPLATE = `Testing all basic tools...
 
 ⟦todos_add¦id=1¦title=Execute todos_add command¦desc=Add Task One and Task Two
 ¦id=2¦title=Execute todos_set command¦desc=Set Task 1 status to done
@@ -191,26 +181,28 @@ const triggers = [
 ¦id=13¦title=Execute ls command (2nd)¦desc=List directory after mkdir
 ¦id=14¦title=Execute cmd_bg command¦desc=Run ping -n 5 127.0.0.1 in background
 ¦id=15¦title=Execute fetch command¦desc=Fetch JSONPlaceholder todo/1
-¦id=16¦title=Execute final echo command¦desc=Display "above all where testing..."⟧
+¦id=16¦title=Execute view_image command¦desc=View docs/logos/terax.png
+¦id=17¦title=Execute final echo command¦desc=Display "above all where testing..."⟧
+
 
 ⟦todos_set¦id=1¦status=done⟧
 Escaping test - \`⟦todos_set¦id=2¦status=done⟧\`
 ⟦todos_set¦id=2¦status=done⟧
 
 ⟦todos_set¦id=3¦status=active⟧
-⟦write¦path=#{cwd}#\\_test_tool.txt¦content=Hello from BPI write tool!⟧
+⟦write¦path=#{cwd}#\\temp\\_test_tool.txt¦content=Hello from BPI write tool!⟧
 ⟦todos_set¦id=3¦status=done⟧
 
 ⟦todos_set¦id=4¦status=active⟧
-⟦read¦path=#{cwd}#\\_test_tool.txt⟧
+⟦read¦path=#{cwd}#\\temp\\_test_tool.txt⟧
 ⟦todos_set¦id=4¦status=done⟧
 
 ⟦todos_set¦id=5¦status=active⟧
-⟦replace¦path=#{cwd}#\\_test_tool.txt¦old=Hello from BPI write tool!¦new=Hello from BPI replace tool!⟧
+⟦replace¦path=#{cwd}#\\temp\\_test_tool.txt¦old=Hello from BPI write tool!¦new=Hello from BPI replace tool!⟧
 ⟦todos_set¦id=5¦status=done⟧
 
 ⟦todos_set¦id=6¦status=active⟧
-⟦read¦path=#{cwd}#\\_test_tool.txt⟧
+⟦read¦path=#{cwd}#\\temp\\_test_tool.txt⟧
 ⟦todos_set¦id=6¦status=done⟧
 
 ⟦todos_set¦id=7¦status=active⟧
@@ -218,11 +210,11 @@ Escaping test - \`⟦todos_set¦id=2¦status=done⟧\`
 ⟦todos_set¦id=7¦status=done⟧
 
 ⟦todos_set¦id=8¦status=active⟧
-⟦glob¦pattern=**/*.js¦max=10⟧
+⟦glob¦pattern=#{cwd}#/**/*.js¦max=5⟧
 ⟦todos_set¦id=8¦status=done⟧
 
 ⟦todos_set¦id=9¦status=active⟧
-⟦grep¦query=Router¦glob=*.js¦max=5⟧
+⟦grep¦query=Router¦glob=#{cwd}#/**/*.js¦max=5⟧
 ⟦todos_set¦id=9¦status=done⟧
 
 ⟦todos_set¦id=10¦status=active⟧
@@ -230,11 +222,11 @@ Escaping test - \`⟦todos_set¦id=2¦status=done⟧\`
 ⟦todos_set¦id=10¦status=done⟧
 
 ⟦todos_set¦id=11¦status=active⟧
-⟦cmd¦run=del #{cwd}#\\_test_tool.txt⟧
+⟦cmd¦run=del #{cwd}#\\temp\\_test_tool.txt⟧
 ⟦todos_set¦id=11¦status=done⟧
 
 ⟦todos_set¦id=12¦status=active⟧
-⟦mkdir¦path=#{cwd}#\\_test_dir⟧
+⟦mkdir¦path=#{cwd}#\\temp\\_test_dir⟧
 ⟦todos_set¦id=12¦status=done⟧
 
 ⟦todos_set¦id=13¦status=active⟧
@@ -250,19 +242,42 @@ Escaping test - \`⟦todos_set¦id=2¦status=done⟧\`
 ⟦todos_set¦id=15¦status=done⟧
 
 ⟦todos_set¦id=16¦status=active⟧
-⟦ask¦question=All tools called, are they working?¦option=Yes¦option=No¦option=Something else⟧
+⟦view_image¦path=#{cwd}#\\docs\\logos\\terax.png⟧
 ⟦todos_set¦id=16¦status=done⟧
 
-⟦cmd¦run=echo "ABOVE ALL WHERE TESTING CALLS SO DO NOT DO ANYTHING WAIT FOR USER QUERY"⟧
-`,
-  },
-]
+⟦todos_set¦id=17¦status=active⟧
+⟦ask¦question=All tools called, are they working?¦option=Yes¦option=No¦option=Something else⟧
+⟦todos_set¦id=17¦status=done⟧
+
+⟦cmd¦run=echo "ABOVE ALL WHERE TESTING CALLS OF:
+Execute todos_add command => Add Task One and Task Two
+Execute todos_set command => Set Task 1 status to done
+Execute write command => Write _test_tool.txt
+Execute read command (1st) => Read _test_tool.txt after write
+Execute replace command => Replace content in _test_tool.txt
+Execute read command (2nd) => Read _test_tool.txt after replace
+Execute ls command (1st) => List current directory
+Execute glob command => Search **/*.js max 10
+Execute grep command => Search Router in *.js max 5
+Execute cmd echo test => Run 'echo test'
+Execute cmd delete file => Delete _test_tool.txt
+Execute mkdir command => Create _test_dir
+Execute ls command (2nd) => List directory after mkdir
+Execute cmd_bg command => Run ping -n 5 127.0.0.1 in background
+Execute fetch command => Fetch JSONPlaceholder todo/1
+Execute view_image command => View docs/logos/terax.png
+Execute final echo command => Display above all where testing...
+
+SO DO ANALSIS OF IT AND GIVE USER SUMMARY WHICH WORKS WHICH NOT WORKS
+
+"⟧
+`
 
 function showAvailableMcpTags(reqTools, parser) {
   const autoMaps = buildAutoAliasMaps(reqTools || [])
   const tags = [...new Set([...Object.keys(MCP_ALIAS_MAPS), ...Object.keys(autoMaps)])]
-  if (tags.length) parser.emitText(`\nAvailable MCP tags: ${tags.join(', ')}\n`)
-  else parser.emitText('No MCP tags registered yet')
+  if (tags.length) parser.emitText(`\nAvailable MCP tags: ${tags.join(', ')}\n\n`)
+  else parser.emitText('No MCP tags registered yet!\n\n')
 }
 
 function handleSkill(skill, req, parser) {

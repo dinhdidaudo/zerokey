@@ -2,6 +2,9 @@ const BPI = require('./bpi')
 const ToolCompiler = require('./compiler')
 const { toOpenAIError } = require('../utils/errors')
 const { restoreMcpInjections, showAvailableMcpTags, handleSkill } = require('./triggers')
+const { buildRawPrompt } = require('../utils/raw-prompt')
+const { isRealChatSession } = require('../utils/session-classifier')
+const { ephemeralSession } = require('../utils/ephemeral-session')
 
 let callCounter = 0
 
@@ -79,16 +82,27 @@ class StreamPipeline {
    * @param {object} session
    * @param {string} provider - 'deepseek' | 'claude' | 'chatgpt'
    * @param {string} ideName - 'vscode' | 'terax' | 'opencode'
+   * @param {Array} [messages] - req.body.messages; when supplied, classifies
+   *   this request as a real chat turn vs an ephemeral utility call
+   *   (title-gen, tool-optimizer, etc.) via isRealChatSession. Ephemeral
+   *   calls get a disposable session clone and rawMode=true (skips
+   *   instructions/skill/MCP-tag setup and the BPI tool-parser — see setup()
+   *   and scan()). Omit `messages` to always use the real session (e.g. for
+   *   the title-gen short-circuit itself, which is already ephemeral by
+   *   construction).
    */
-  constructor(res, session, provider, ideName) {
+  constructor(res, session, provider, ideName, messages = []) {
     this.compiler = new ToolCompiler(ideName, provider)
+
+    const isReal = isRealChatSession(ideName, messages)
 
     this.res = res
     this.provider = provider
-    this.session = session
+    this.session = isReal ? session : ephemeralSession(session)
+    this.rawMode = !isReal
 
-    this.isNewSession = session.parentMessageId == null
-    this.toolCalling = session.toolCalling ?? true
+    this.isNewSession = this.session.parentMessageId == null
+    this.toolCalling = this.session.toolCalling ?? false
     this.haveInstructionsAPI = false
 
     this.inTool = false
@@ -156,7 +170,7 @@ class StreamPipeline {
   // ── file upload ────────────────────────────────────────────────────────
 
   async _uploadFile(uploadFn, file, collector) {
-    this.emitText(`\nUploading ${file.filename}...`)
+    this.emitText(`\nUploading image...`)
     const result = await uploadFn(file)
     this.emitText(' done.\n')
     collector.push(result)
@@ -171,12 +185,21 @@ class StreamPipeline {
    * Returns { prompt } — if a skill was triggered the response is already
    * ended by handleSkill and the caller should return early.
    *
+   * When this.rawMode is set (ephemeral/non-real-session calls), all of the
+   * above is skipped entirely — no instructions injection, no skill
+   * matching, no MCP tag scanning. Just a flat role-tagged prompt built
+   * straight from the raw messages.
+   *
    * @param {Array}  messages
    * @param {Array}  tools
    * @param {object} req
    * @returns {Promise<{prompt: string, handled: boolean}>}
    */
   async setup(messages, tools, req) {
+    if (this.rawMode) {
+      return { prompt: buildRawPrompt(messages), handled: false }
+    }
+
     restoreMcpInjections(this.session, this.compiler.tools, tools)
 
     const { prompt, skill } = await this.compiler.formatPrompt(messages, this)
@@ -210,6 +233,11 @@ class StreamPipeline {
   // ── BPI scanning ───────────────────────────────────────────────────────
 
   scan(text) {
+    if (this.rawMode) {
+      this.emitText(text)
+      return
+    }
+
     this.buffer += text
 
     while (true) {

@@ -5,8 +5,6 @@ const { ChatGPTAPI } = require('../core/chatgpt/api')
 const { chatgptStreamHandler } = require('../core/chatgpt/stream-handler')
 const { acquireSlot } = require('../utils/rate-limiter')
 const { validateMessages } = require('../utils/route-helpers')
-const { tryEmitTitle } = require('../utils/is-title-gen')
-
 const chatgptApi = new ChatGPTAPI()
 
 async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
@@ -18,13 +16,12 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
   router.post('/', async (req, res) => {
     const { messages = [], tools } = req.body
 
-    if (tryEmitTitle(req, res, 'chatgpt', session)) return
-
-    const model = session.model || 'auto'
     if (!validateMessages(messages, res)) return
 
     StreamPipeline.setSSEHeaders(res)
-    const pipeline = new StreamPipeline(res, session, 'chatgpt', req.ide)
+    const pipeline = new StreamPipeline(res, session, 'chatgpt', req.ide, messages)
+    const activeSession = pipeline.session
+    const model = activeSession.model || 'auto'
 
     const attachments = []
     pipeline.bindUploader(chatgptApi, attachments)
@@ -37,13 +34,13 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
     try {
       const stream = await chatgptApi.chatCompletion(
         prompt,
-        session.chatSessionId,
-        session.parentMessageId,
+        activeSession.chatSessionId,
+        activeSession.parentMessageId,
         model,
         attachments,
       )
 
-      chatgptStreamHandler(stream, session, pipeline)
+      chatgptStreamHandler(stream, activeSession, pipeline)
     } catch (error) {
       return pipeline.onError(error)
     }

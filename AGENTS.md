@@ -49,7 +49,10 @@
   extract-files.js # decodeContentParts — base64 data-URI → Buffer[] for file upload
   find-port.js # findPort, isPortActive — port scanning
   har-to-capture.js # harToCapture — HAR JSON → network-capture format
-  is-title-gen.js # isTitleGenCall, tryEmitTitle — OpenCode title-gen short-circuit (uses StreamPipeline)
+  capture-request.js # captureRequest — dumps req.body to temp/captures/*.json ($req skill + unconditional on DeepSeek requests)
+  ephemeral-session.js # ephemeralSession — clones session with chatSessionId/parentMessageId nulled, for ephemeral/utility calls
+  raw-prompt.js # buildRawPrompt — flat ROLE: content join, no instructions/skill/tool-grammar injection, for ephemeral calls
+  session-classifier.js # isRealChatSession — per-IDE fingerprinted system-prompt prefix match; default-deny classifies non-matching system-first calls as ephemeral
   logger.js # console color wrappers (debug, info, success, warn, error)
   rate-limiter.js # acquireSlot — per-provider rate limiting (5 req / 15s window)
   route-helpers.js # validateMessages — shared route middleware
@@ -82,21 +85,22 @@
   → core/claude/api, core/deepseek/api, core/chatgpt/api
   → config/constants
  claude.js
-  → engine/pipeline (StreamPipeline)
+  → engine/pipeline (StreamPipeline, passes messages → pipeline.session/rawMode)
   → core/claude/api, core/claude/stream-handler, core/claude/set-instructions
-  → utils/rate-limiter, utils/route-helpers, utils/is-title-gen
+  → utils/rate-limiter, utils/route-helpers
  deepseek.js
-  → engine/pipeline (StreamPipeline)
+  → engine/pipeline (StreamPipeline, passes messages → pipeline.session/rawMode)
   → core/deepseek/api, core/deepseek/stream-handler
-  → utils/rate-limiter, utils/route-helpers, utils/is-title-gen
+  → utils/rate-limiter, utils/route-helpers
  chatgpt.js
-  → engine/pipeline (StreamPipeline)
+  → engine/pipeline (StreamPipeline, passes messages → pipeline.session/rawMode)
   → core/chatgpt/api, core/chatgpt/stream-handler
-  → utils/rate-limiter, utils/route-helpers, utils/is-title-gen
+  → utils/rate-limiter, utils/route-helpers
  pipeline.js
   → engine/compiler (ToolCompiler)
   → engine/triggers (restoreMcpInjections, showAvailableMcpTags, handleSkill)
   → utils/errors (classifyError)
+  → utils/session-classifier (isRealChatSession), utils/ephemeral-session (ephemeralSession), utils/raw-prompt (buildRawPrompt)
  compiler.js
   → engine/instructions, engine/tool-defs
   → engine/triggers (matchMcpTrigger)
@@ -108,13 +112,18 @@
   → syncIdeConfig (writes VS Code chatLanguageModels.json)
   → buildRouter(selected) → per-provider route mounted at /v1/chat/completions
  per-request (POST /v1/chat/completions):
-  route handler → tryEmitTitle (OpenCode short-circuit)
-  → new StreamPipeline(res, session, provider, ide) → internally creates ToolCompiler singleton
-  → pipeline.setup(messages, tools, req) → restoreMcpInjections → formatPrompt → skill check → buildPrompt → showAvailableMcpTags
+  route handler → new StreamPipeline(res, session, provider, ide, messages)
+  → pipeline ctor: isRealChatSession(ide, messages) classifies real chat turn vs ephemeral utility call (title-gen, tool-optimizer, etc.)
+   → real: pipeline.session = session, pipeline.rawMode = false
+   → ephemeral: pipeline.session = ephemeralSession(session) (clone, chatSessionId/parentMessageId nulled, mutations discarded), pipeline.rawMode = true
+  → route uses pipeline.session (activeSession) for all chatSessionId/parentMessageId/stream-handler calls downstream
+  → pipeline.setup(messages, tools, req):
+   → rawMode=true: returns buildRawPrompt(messages) directly, skips formatPrompt/buildPrompt/skill-matching/MCP-tag scan
+   → rawMode=false: restoreMcpInjections → formatPrompt → skill check → buildPrompt → showAvailableMcpTags
   → acquireSlot (rate limit)
   → providerApi.chatCompletion → stream
-  → streamHandler → pipeline.scan (BPI TOOL parsing, SSE chunk emission)
-  → pipeline.sendFinalChunk → session.lastUsed updated
+  → streamHandler → pipeline.scan (rawMode: emits text straight through, skips BPI tool-call parser; else BPI TOOL parsing, SSE chunk emission)
+  → pipeline.sendFinalChunk → activeSession.lastUsed updated (ephemeral clone never persisted to user.sessions)
 
 ## SCHEMA
  # OpenAI-compatible chat completions (subset)
@@ -176,8 +185,6 @@
  ChatGPT requires sentinel proof token refresh before every conversation turn
  Claude requires org-id extracted from captured fetch URL; org-scoped rate limits with summary fallback at >=90% usage
  StreamPipeline is the head — routes create it, it internally wires ToolCompiler (singleton per IDE×provider)
- StreamPipeline.setup() runs on every request: restoreMcpInjections → formatPrompt → skill → buildPrompt → showAvailableMcpTags
- StreamPipeline.onError() emits OpenAI-compatible error via stream
  formatPrompt is async, signature (messages, pipeline); returns { prompt, skill }
  buildPrompt signature (userPrompt, pipeline); inlines instructions on new session unless pipeline.haveInstructionsAPI
  skill check happens before provider call; handled in pipeline.setup(), triggering message never reaches provider
@@ -185,7 +192,6 @@
  pipeline.isNewSession, pipeline.toolCalling, pipeline.haveInstructionsAPI set by StreamPipeline constructor; Claude sets haveInstructionsAPI=true
  Auto MCP registration: mcp_<server>_<tool> naming → $<server> tag, merged into MCP_ALIAS_MAPS
  StreamPipeline defers tool-call emission for terax/opencode (batched at flush), emits immediately for vscode
- tryEmitTitle creates a lightweight StreamPipeline for the title-gen short-circuit
  Rate limiter: 5 requests per 15-second window per provider label
  Error logs append to temp/errors.txt, rotated at 1MB
  VS Code model sync writes to %APPDATA%/Code/User/chatLanguageModels.json
