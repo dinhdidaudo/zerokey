@@ -4,7 +4,7 @@ const { injectMcpAliases } = require('./mcp/inject')
 const { buildAutoAliasMaps, hashTools } = require('./mcp/auto')
 const BROWSER_MCP = require('./mcp/browser')
 
-const CAPTURES_DIR = path.join(__dirname, '..', '..', 'temp', 'captures')
+const CAPTURES_DIR = path.join(__dirname, '..', 'temp', 'captures')
 
 function ensureDir() {
   if (!fs.existsSync(CAPTURES_DIR)) {
@@ -176,66 +176,80 @@ const triggers = [
     params: ['cwd'],
     bpi: `Testing all basic tools...
 
-⟦todos_add¦id=1¦title=Execute todos_add command¦desc=Add Task One and Task Two⟧
-⟦todos_add¦id=2¦title=Execute todos_set command¦desc=Set Task 1 status to done⟧
-⟦todos_add¦id=3¦title=Execute write command¦desc=Write _test_tool.txt⟧
-⟦todos_add¦id=4¦title=Execute read command (1st)¦desc=Read _test_tool.txt after write⟧
-⟦todos_add¦id=5¦title=Execute replace command¦desc=Replace content in _test_tool.txt⟧
-⟦todos_add¦id=6¦title=Execute read command (2nd)¦desc=Read _test_tool.txt after replace⟧
-⟦todos_add¦id=7¦title=Execute ls command (1st)¦desc=List current directory⟧
-⟦todos_add¦id=8¦title=Execute glob command¦desc=Search **/*.js max 10⟧
-⟦todos_add¦id=9¦title=Execute grep command¦desc=Search Router in *.js max 5⟧
-⟦todos_add¦id=10¦title=Execute cmd echo test¦desc=Run 'echo test'⟧
-⟦todos_add¦id=11¦title=Execute cmd delete file¦desc=Delete _test_tool.txt⟧
-⟦todos_add¦id=12¦title=Execute mkdir command¦desc=Create _test_dir⟧
-⟦todos_add¦id=13¦title=Execute ls command (2nd)¦desc=List directory after mkdir⟧
-⟦todos_add¦id=14¦title=Execute cmd_bg command¦desc=Run ping -n 5 127.0.0.1 in background⟧
-⟦todos_add¦id=15¦title=Execute fetch command¦desc=Fetch JSONPlaceholder todo/1⟧
-⟦todos_add¦id=16¦title=Execute final echo command¦desc=Display "above all where testing..."⟧
+⟦todos_add¦id=1¦title=Execute todos_add command¦desc=Add Task One and Task Two
+¦id=2¦title=Execute todos_set command¦desc=Set Task 1 status to done
+¦id=3¦title=Execute write command¦desc=Write _test_tool.txt
+¦id=4¦title=Execute read command (1st)¦desc=Read _test_tool.txt after write
+¦id=5¦title=Execute replace command¦desc=Replace content in _test_tool.txt
+¦id=6¦title=Execute read command (2nd)¦desc=Read _test_tool.txt after replace
+¦id=7¦title=Execute ls command (1st)¦desc=List current directory
+¦id=8¦title=Execute glob command¦desc=Search **/*.js max 10
+¦id=9¦title=Execute grep command¦desc=Search Router in *.js max 5
+¦id=10¦title=Execute cmd echo test¦desc=Run 'echo test'
+¦id=11¦title=Execute cmd delete file¦desc=Delete _test_tool.txt
+¦id=12¦title=Execute mkdir command¦desc=Create _test_dir
+¦id=13¦title=Execute ls command (2nd)¦desc=List directory after mkdir
+¦id=14¦title=Execute cmd_bg command¦desc=Run ping -n 5 127.0.0.1 in background
+¦id=15¦title=Execute fetch command¦desc=Fetch JSONPlaceholder todo/1
+¦id=16¦title=Execute final echo command¦desc=Display "above all where testing..."⟧
 
 ⟦todos_set¦id=1¦status=done⟧
-\`⟦todos_set¦id=2¦status=done⟧\`
+Escaping test - \`⟦todos_set¦id=2¦status=done⟧\`
 ⟦todos_set¦id=2¦status=done⟧
 
+⟦todos_set¦id=3¦status=active⟧
 ⟦write¦path=#{cwd}#\\_test_tool.txt¦content=Hello from BPI write tool!⟧
 ⟦todos_set¦id=3¦status=done⟧
 
+⟦todos_set¦id=4¦status=active⟧
 ⟦read¦path=#{cwd}#\\_test_tool.txt⟧
 ⟦todos_set¦id=4¦status=done⟧
 
+⟦todos_set¦id=5¦status=active⟧
 ⟦replace¦path=#{cwd}#\\_test_tool.txt¦old=Hello from BPI write tool!¦new=Hello from BPI replace tool!⟧
 ⟦todos_set¦id=5¦status=done⟧
 
+⟦todos_set¦id=6¦status=active⟧
 ⟦read¦path=#{cwd}#\\_test_tool.txt⟧
 ⟦todos_set¦id=6¦status=done⟧
 
+⟦todos_set¦id=7¦status=active⟧
 ⟦ls¦path=#{cwd}#⟧
 ⟦todos_set¦id=7¦status=done⟧
 
+⟦todos_set¦id=8¦status=active⟧
 ⟦glob¦pattern=**/*.js¦max=10⟧
 ⟦todos_set¦id=8¦status=done⟧
 
+⟦todos_set¦id=9¦status=active⟧
 ⟦grep¦query=Router¦glob=*.js¦max=5⟧
 ⟦todos_set¦id=9¦status=done⟧
 
+⟦todos_set¦id=10¦status=active⟧
 ⟦cmd¦run=echo test⟧
 ⟦todos_set¦id=10¦status=done⟧
 
+⟦todos_set¦id=11¦status=active⟧
 ⟦cmd¦run=del #{cwd}#\\_test_tool.txt⟧
 ⟦todos_set¦id=11¦status=done⟧
 
+⟦todos_set¦id=12¦status=active⟧
 ⟦mkdir¦path=#{cwd}#\\_test_dir⟧
 ⟦todos_set¦id=12¦status=done⟧
 
+⟦todos_set¦id=13¦status=active⟧
 ⟦ls¦path=#{cwd}#⟧
 ⟦todos_set¦id=13¦status=done⟧
 
+⟦todos_set¦id=14¦status=active⟧
 ⟦cmd_bg¦run=ping -n 5 127.0.0.1⟧
 ⟦todos_set¦id=14¦status=done⟧
 
+⟦todos_set¦id=15¦status=active⟧
 ⟦fetch¦url=https://jsonplaceholder.typicode.com/todos/1⟧
 ⟦todos_set¦id=15¦status=done⟧
 
+⟦todos_set¦id=16¦status=active⟧
 ⟦ask¦question=All tools called, are they working?¦option=Yes¦option=No¦option=Something else⟧
 ⟦todos_set¦id=16¦status=done⟧
 
