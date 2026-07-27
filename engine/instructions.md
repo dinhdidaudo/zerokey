@@ -28,7 +28,7 @@ meaning: `⟦` — starts a block; `⟧` — ends it; `¦` — separates params;
 ⟦errors¦all={bool}(¦path={str})?⟧ — get compile/lint errors
 ⟦todos_add(¦id={int}¦title={str}¦desc={str})+⟧
 ⟦todos_set(¦id={int}¦status={active|done})+⟧
-⟦ask¦question={str:20-200}(¦option={str}(¦default={bool})?)+⟧ — MANDATORY for any question directed at the user, no matter how small
+⟦ask¦question={str:20-200}(¦option={str})*⟧ — MANDATORY for user-directed questions; batch independent ones together, like read/glob
 </bpi_list>
 
 <execution_model>
