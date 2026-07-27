@@ -312,7 +312,6 @@ without extractable file/image parts.
   "disableTools": false,
   "model": "expert",
   "dynamicToolsHash": null,
-  "_dynamicGrammarCache": null,
   "todos": {}
 }
 ```
@@ -431,7 +430,6 @@ Manages HTTP requests to `claude.ai/api` using browser-identical headers in **ex
   "disableTools": false,
   "model": "claude-sonnet-4-6",
   "dynamicToolsHash": null,
-  "_dynamicGrammarCache": null,
   "todos": {}
 }
 ```
@@ -468,7 +466,7 @@ Manages HTTP requests to `chatgpt.com/backend-api` using browser-identical heade
 - **`CookieJar`** (`utils/cookie-jar.js`): Cookie persistence across requests
 - **`readSSE`** (`utils/sse-reader.js`): SSE stream parser
 - **`setChatGPTInstructions`** (`core/chatgpt/set-instructions.js`): PATCH user_system_messages (hash-cached; currently disabled in favor of prepending to prompt)
-- **`Instructions`** (`lib/engine/instructions.js`): System prompt singleton
+- **`Instructions`** (`engine/instructions.js`): System prompt singleton
 - **`acquireSlot`** (`utils/rate-limiter.js`): 5 req / 15s sliding window rate limiter
 
 ### Flow
@@ -561,7 +559,6 @@ Manages HTTP requests to `chatgpt.com/backend-api` using browser-identical heade
   "disableTools": false,
   "model": "auto",
   "dynamicToolsHash": null,
-  "_dynamicGrammarCache": null,
   "chatSessionId": "abc-123-def",
   "parentMessageId": "client-created-root",
   "createdAt": "2026-07-06T10:30:00.000Z",
@@ -623,17 +620,27 @@ Manages cookie persistence across requests:
 - `captureFromRawHeaders(rawHeaders)` → extracts from raw header array
 - `toString()` → serializes all cookies for request header
 
-### Tool Compiler (`lib/engine/index.js`)
+### Tool Compiler (`engine/compiler.js`)
 
-Per-request singleton keyed by `ide:provider`:
+Singleton per IDE×provider (cached in `ToolCompiler.objects`):
 
-- **`formatPrompt(messages, isNewSession)`** → dispatches last message to role-specific handler
-- **`buildPrompt(userPrompt, dynamicGrammar)`** → prepends system instructions + dynamic grammar
-- **`syncDynamicTools(reqTools, session)`** → hashes tool array, filters inbuilts, registers passthrough entries, caches grammar
-- **`compile(toolCall)`** → parses generic tool args, emits IDE-specific tool call
-- **`Stream`** → 3-state FSM (outside/toolStartFound/inTool) — parses `⟦tool_name(¦param=value)+` syntax, batches tool_calls on stream close
+- **`formatPrompt(messages, pipeline)`** → dispatches messages to role-specific handlers, handles file uploads via pipeline.upload, returns `{ prompt, skill }`
+- **`buildPrompt(userPrompt, pipeline)`** → prepends system instructions on new sessions (unless pipeline.haveInstructionsAPI)
+- **`compile(compactStr, session)`** → parses BPI compact string, emits IDE-specific tool call
+- **`parse(compactStr)`** → 3-part parser: tool name, key=value pairs, repeating array groups
+- **`emit(internal, session)`** → converts internal JSON to IDE-specific tool call format
+- **`matchSkill(text, raw)`** → static — O(1) trigger-word lookup with positional param substitution
 
-### Instructions (`lib/engine/instructions.js`)
+### Stream Pipeline (`engine/pipeline.js`)
+
+Created per-request by routes — owns the SSE lifecycle:
+
+- **`setup(messages, tools, req)`** → restoreMcpInjections → formatPrompt → skill check → buildPrompt → showAvailableMcpTags
+- **`scan(text)`** → 3-state FSM (outside/toolStartFound/inTool) — parses BPI tool syntax, batches tool_calls on flush
+- **`onError(error)`** → emits OpenAI-compatible error via stream
+- **`emitAndEnd(text)`** → scan + flush + stop + DONE
+
+### Instructions (`engine/instructions.js`)
 
 Singleton that loads and caches system prompts:
 
@@ -710,7 +717,6 @@ Singleton that loads and caches system prompts:
 - `disableTools` — boolean; when true, tools + instructions not prepended
 - `model` — provider-specific model string (e.g. "expert", "claude-sonnet-4-6", "auto")
 - `dynamicToolsHash` — SHA-256 hash of req.body.tools[] for MCP cache invalidation
-- `_dynamicGrammarCache` — cached BPI grammar string for current tool set
 - `todos` — persisted todo items from `todos_add`/`todos_set` tool calls
 
 ---

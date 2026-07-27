@@ -1,14 +1,10 @@
 const express = require('express')
 
-const ToolCompiler = require('../lib/engine')
+const { StreamPipeline } = require('../engine/pipeline')
 const { DeepSeekAPI } = require('../core/deepseek/api')
 const { streamHandler } = require('../core/deepseek/stream-handler')
 const { acquireSlot } = require('../utils/rate-limiter')
-const {
-  validateMessages,
-  handleRouteError,
-  setupCompilerPipeline,
-} = require('../utils/route-helpers')
+const { validateMessages } = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
 
 const deepseekApi = new DeepSeekAPI()
@@ -26,23 +22,14 @@ async function buildDeepSeekRouter(parsedFetch, session) {
 
     if (!validateMessages(messages, res)) return
 
-    const compiler = new ToolCompiler(req.ide, 'deepseek')
-    ToolCompiler.setSSEHeaders(res)
-    const parser = compiler.getParser(res, session)
-    const modelType = parser.isNewSession ? session.model || 'expert' : null
+    StreamPipeline.setSSEHeaders(res)
+    const pipeline = new StreamPipeline(res, session, 'deepseek', req.ide)
+    const modelType = pipeline.isNewSession ? session.model || 'expert' : null
 
-    // Extract and upload files from messages
     const fileIds = []
-    parser.bindUploader(deepseekApi, fileIds)
+    pipeline.bindUploader(deepseekApi, fileIds)
 
-    const { prompt, handled } = await setupCompilerPipeline(
-      compiler,
-      parser,
-      session,
-      messages,
-      tools,
-      req,
-    )
+    const { prompt, handled } = await pipeline.setup(messages, tools, req)
     if (handled) return
 
     try {
@@ -70,9 +57,9 @@ async function buildDeepSeekRouter(parsedFetch, session) {
         )
       }
 
-      streamHandler(deepseekStream, session, parser, retry)
+      streamHandler(deepseekStream, session, pipeline, retry)
     } catch (error) {
-      return handleRouteError(error, parser)
+      return pipeline.onError(error)
     }
   })
 

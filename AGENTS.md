@@ -23,14 +23,14 @@
    stream-handler.js # chatgptStreamHandler — SSE parsing, session-id tracking
    pow.js # ChatGPTProofOfWork — sentinel proof token decode/generate/solve
   session-selector.js # session-selector.js
- lib/engine/
-  index.js # ToolCompiler — singleton per IDE×provider: formatPrompt, parse, emit, skill matching
+ engine/
+  compiler.js # ToolCompiler — singleton per IDE×provider: formatPrompt, buildPrompt, compile/parse/emit, matchSkill
+  pipeline.js # StreamPipeline — SSE stream head: scanning, emitting, MCP injection, skill handling, error formatting
   instructions.js # Instructions — lazy-loads instructions.md + skills-extra.md, hash for change detection
   instructions.md # Base system prompt (agent rules, BPI syntax, execution model, output contract)
   skills-extra.md # Extra prompt appends (tool grammar, dynamic-tools listing)
   triggers.js # Skills: $cwd, $save, $test, $browser, $mcp, $mcp-dump; MCP auto-registration, passthrough, restore
   tool-defs.js # TOOLS — generic tool grammar + per-IDE mappings (vscode, terax, opencode), output shorteners
-  stream.js # ToolStream — SSE chunk emitter, tool-call parser, vscode immediate vs deferred batching
   mcp/
    browser.js # BROWSER_MCP — built-in browser MCP alias map
    inject.js # injectMcpAliases — registers MCP tools into compiler.tools
@@ -49,10 +49,10 @@
   extract-files.js # decodeContentParts — base64 data-URI → Buffer[] for file upload
   find-port.js # findPort, isPortActive — port scanning
   har-to-capture.js # harToCapture — HAR JSON → network-capture format
-  is-title-gen.js # isTitleGenCall, tryEmitTitle — OpenCode title-gen short-circuit
+  is-title-gen.js # isTitleGenCall, tryEmitTitle — OpenCode title-gen short-circuit (uses StreamPipeline)
   logger.js # console color wrappers (debug, info, success, warn, error)
   rate-limiter.js # acquireSlot — per-provider rate limiting (5 req / 15s window)
-  route-helpers.js # validateMessages, handleRouteError — shared route middleware
+  route-helpers.js # validateMessages — shared route middleware
   sse-reader.js # readSSE — generic SSE stream reader for both Web and Node streams
   sync-ide-config.js # syncIdeConfig — writes ZeroKey model entry into VS Code chatLanguageModels.json
  scripts/
@@ -82,24 +82,24 @@
   → core/claude/api, core/deepseek/api, core/chatgpt/api
   → config/constants
  claude.js
-  → lib/engine (ToolCompiler)
+  → engine/pipeline (StreamPipeline)
   → core/claude/api, core/claude/stream-handler, core/claude/set-instructions
   → utils/rate-limiter, utils/route-helpers, utils/is-title-gen
-  → lib/engine/triggers (handleSkill via route-helpers)
  deepseek.js
-  → lib/engine (ToolCompiler)
+  → engine/pipeline (StreamPipeline)
   → core/deepseek/api, core/deepseek/stream-handler
   → utils/rate-limiter, utils/route-helpers, utils/is-title-gen
  chatgpt.js
-  → lib/engine (ToolCompiler)
+  → engine/pipeline (StreamPipeline)
   → core/chatgpt/api, core/chatgpt/stream-handler
   → utils/rate-limiter, utils/route-helpers, utils/is-title-gen
- route-helpers.js
-  → lib/engine/triggers (restoreMcpInjections, showAvailableMcpTags, handleSkill)
-  → lib/engine (ToolCompiler.formatPrompt, ToolCompiler.buildPrompt)
- index.js
-  → lib/engine/instructions, lib/engine/tool-defs, lib/engine/stream
-  → lib/engine/triggers (matchMcpTrigger)
+ pipeline.js
+  → engine/compiler (ToolCompiler)
+  → engine/triggers (restoreMcpInjections, showAvailableMcpTags, handleSkill)
+  → utils/errors (classifyError)
+ compiler.js
+  → engine/instructions, engine/tool-defs
+  → engine/triggers (matchMcpTrigger)
   → utils/extract-files
 
 ## RUNTIME-GRAPH
@@ -109,11 +109,12 @@
   → buildRouter(selected) → per-provider route mounted at /v1/chat/completions
  per-request (POST /v1/chat/completions):
   route handler → tryEmitTitle (OpenCode short-circuit)
-  → setupCompilerPipeline → restoreMcpInjections → formatPrompt → skill check → buildPrompt → showAvailableMcpTags (new sessions)
+  → new StreamPipeline(res, session, provider, ide) → internally creates ToolCompiler singleton
+  → pipeline.setup(messages, tools, req) → restoreMcpInjections → formatPrompt → skill check → buildPrompt → showAvailableMcpTags
   → acquireSlot (rate limit)
   → providerApi.chatCompletion → stream
-  → streamHandler → ToolStream.scan (⟦...⟧ parsing, SSE chunk emission)
-  → ToolStream.sendFinalChunk → session.lastUsed updated
+  → streamHandler → pipeline.scan (BPI TOOL parsing, SSE chunk emission)
+  → pipeline.sendFinalChunk → session.lastUsed updated
 
 ## SCHEMA
  # OpenAI-compatible chat completions (subset)
@@ -174,14 +175,17 @@
  DeepSeek requires PoW challenge per request (WASM-based sha3); retries on SSE error exactly once
  ChatGPT requires sentinel proof token refresh before every conversation turn
  Claude requires org-id extracted from captured fetch URL; org-scoped rate limits with summary fallback at >=90% usage
- formatPrompt is async, signature (messages, parser); returns { prompt, skill }
- buildPrompt signature (userPrompt, parser); inlines instructions on new session unless parser.haveInstructionsAPI
- skill check happens before provider call; handled in setupCompilerPipeline, triggering message never reaches provider
- setupCompilerPipeline (route-helpers.js) runs on every request: restoreMcpInjections → formatPrompt → skill → buildPrompt → showAvailableMcpTags
+ StreamPipeline is the head — routes create it, it internally wires ToolCompiler (singleton per IDE×provider)
+ StreamPipeline.setup() runs on every request: restoreMcpInjections → formatPrompt → skill → buildPrompt → showAvailableMcpTags
+ StreamPipeline.onError() emits OpenAI-compatible error via stream
+ formatPrompt is async, signature (messages, pipeline); returns { prompt, skill }
+ buildPrompt signature (userPrompt, pipeline); inlines instructions on new session unless pipeline.haveInstructionsAPI
+ skill check happens before provider call; handled in pipeline.setup(), triggering message never reaches provider
  session.mcpInjected populated by restoreMcpInjections from current reqTools; once injected, tags stay for session lifetime
- parser.isNewSession, parser.toolCalling, parser.haveInstructionsAPI set by ToolStream constructor; Claude sets haveInstructionsAPI=true
+ pipeline.isNewSession, pipeline.toolCalling, pipeline.haveInstructionsAPI set by StreamPipeline constructor; Claude sets haveInstructionsAPI=true
  Auto MCP registration: mcp_<server>_<tool> naming → $<server> tag, merged into MCP_ALIAS_MAPS
- ToolStream defers tool-call emission for terax/opencode (batched at flush), emits immediately for vscode
+ StreamPipeline defers tool-call emission for terax/opencode (batched at flush), emits immediately for vscode
+ tryEmitTitle creates a lightweight StreamPipeline for the title-gen short-circuit
  Rate limiter: 5 requests per 15-second window per provider label
  Error logs append to temp/errors.txt, rotated at 1MB
  VS Code model sync writes to %APPDATA%/Code/User/chatLanguageModels.json
@@ -191,6 +195,7 @@
  New provider: add BUILDERS entry (chat-router.js), add to SessionSelector provider list + PROVIDER_URLS/PROVIDER_STEPS, add MODEL_HASH entry (constants.js)
  New tool: add entry to TOOLS object (tool-defs.js), add per-IDE mapping
  New skill: add entry to triggers array (triggers.js), with trigger word + bpi template
+ Stream pipeline: StreamPipeline owns the SSE lifecycle; ToolCompiler is a stateless service created by StreamPipeline
  MCP integration: tools with mcp_<server>_<tool> naming auto-register as $<server> skill tag
  Dynamic tools: passed via req.body.tools[], hashed per session for change detection
  Agent instructions: edit instructions.md (base) or skills-extra.md (grammar appends)

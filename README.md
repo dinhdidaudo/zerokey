@@ -170,10 +170,10 @@ ZeroKey's tool layer is extensible past the built-in BPI tools.
 - **Inspect what's registered** — ask the agent `$mcp` to list currently registered MCP tags for
   the session, or `$mcp-dump` to dump the full alias map as JSON.
 - **Custom skills** — built-in skills (`$save`, `$test`, `$browser`, `$cwd`, `$mcp`, `$mcp-dump`)
-  are entries in `lib/engine/triggers.js` — each is a trigger word plus a BPI template. Add a new
+  are entries in `engine/triggers.js` — each is a trigger word plus a BPI template. Add a new
   entry to teach the agent a new skill.
 - **Per-IDE tool grammar** — the same tool set compiles differently per IDE (VS Code, Terax,
-  OpenCode) from one shared definition in `lib/engine/tool-defs.js`.
+  OpenCode) from one shared definition in `engine/tool-defs.js`.
 
 ## Session Storage
 

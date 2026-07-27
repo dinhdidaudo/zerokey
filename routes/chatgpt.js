@@ -1,14 +1,10 @@
 const express = require('express')
 
-const ToolCompiler = require('../lib/engine')
+const { StreamPipeline } = require('../engine/pipeline')
 const { ChatGPTAPI } = require('../core/chatgpt/api')
 const { chatgptStreamHandler } = require('../core/chatgpt/stream-handler')
 const { acquireSlot } = require('../utils/rate-limiter')
-const {
-  validateMessages,
-  handleRouteError,
-  setupCompilerPipeline,
-} = require('../utils/route-helpers')
+const { validateMessages } = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
 
 const chatgptApi = new ChatGPTAPI()
@@ -27,21 +23,13 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
     const model = session.model || 'auto'
     if (!validateMessages(messages, res)) return
 
-    const compiler = new ToolCompiler(req.ide, 'chatgpt')
-    ToolCompiler.setSSEHeaders(res)
-    const parser = compiler.getParser(res, session)
+    StreamPipeline.setSSEHeaders(res)
+    const pipeline = new StreamPipeline(res, session, 'chatgpt', req.ide)
 
     const attachments = []
-    parser.bindUploader(chatgptApi, attachments)
+    pipeline.bindUploader(chatgptApi, attachments)
 
-    const { prompt, handled } = await setupCompilerPipeline(
-      compiler,
-      parser,
-      session,
-      messages,
-      tools,
-      req,
-    )
+    const { prompt, handled } = await pipeline.setup(messages, tools, req)
     if (handled) return
 
     await acquireSlot('ChatGPT')
@@ -55,9 +43,9 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
         attachments,
       )
 
-      chatgptStreamHandler(stream, session, parser)
+      chatgptStreamHandler(stream, session, pipeline)
     } catch (error) {
-      return handleRouteError(error, parser)
+      return pipeline.onError(error)
     }
   })
 

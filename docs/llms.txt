@@ -24,7 +24,7 @@ ZeroKey turns a browser session you already have (DeepSeek, Claude, or ChatGPT, 
 - 3 providers supported: DeepSeek, Claude, ChatGPT (pick one per server process — restart to switch)
 - 3 IDEs supported: VS Code (built-in Chat), Terax, OpenCode — any OpenAI-compatible client works
 - OpenAI-compatible endpoints: `GET /v1/models`, `POST /v1/chat/completions` (SSE streaming)
-- Extensible: MCP tools named `mcp_<server>_<tool>` auto-register; custom skills are trigger-word + template entries in `lib/engine/triggers.js`
+- Extensible: MCP tools named `mcp_<server>_<tool>` auto-register; custom skills are trigger-word + template entries in `engine/triggers.js`
 - No API keys, no telemetry, no hosted servers — self-hosted only
 
 ## Links

@@ -1,15 +1,11 @@
 const express = require('express')
 
-const ToolCompiler = require('../lib/engine')
+const { StreamPipeline } = require('../engine/pipeline')
 const { ClaudeAPI } = require('../core/claude/api')
 const { claudeStreamHandler } = require('../core/claude/stream-handler')
 const { setClaudeInstructions } = require('../core/claude/set-instructions')
 const { acquireSlot } = require('../utils/rate-limiter')
-const {
-  validateMessages,
-  handleRouteError,
-  setupCompilerPipeline,
-} = require('../utils/route-helpers')
+const { validateMessages } = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
 
 const claudeApi = new ClaudeAPI()
@@ -29,35 +25,27 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
 
     if (!validateMessages(messages, res)) return
 
-    const compiler = new ToolCompiler(req.ide, 'claude')
-    ToolCompiler.setSSEHeaders(res)
-    const parser = compiler.getParser(res, session)
+    StreamPipeline.setSSEHeaders(res)
+    const pipeline = new StreamPipeline(res, session, 'claude', req.ide)
 
     if (userData?.waitUntil && userData.waitUntil > Date.now()) {
       emitLimitResponse(
-        parser,
+        pipeline,
         userData.waitUntil,
         `This user's usage quota is still over its limit`,
       )
       return
     }
 
-    if (parser.isNewSession) {
-      await setClaudeInstructions(claudeApi, userData, parser.toolCalling)
-      parser.haveInstructionsAPI = true
+    if (pipeline.isNewSession) {
+      await setClaudeInstructions(claudeApi, userData, pipeline.toolCalling)
+      pipeline.haveInstructionsAPI = true
     }
 
     const fileIds = []
-    parser.bindUploader(claudeApi, fileIds)
+    pipeline.bindUploader(claudeApi, fileIds)
 
-    const { prompt, handled } = await setupCompilerPipeline(
-      compiler,
-      parser,
-      session,
-      messages,
-      tools,
-      req,
-    )
+    const { prompt, handled } = await pipeline.setup(messages, tools, req)
     if (handled) return
 
     await acquireSlot('Claude')
@@ -77,7 +65,7 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
         session.chatSessionId = chatSessionId
       }
 
-      await claudeStreamHandler(stream, session, parser, async (limitReached) => {
+      await claudeStreamHandler(stream, session, pipeline, async (limitReached) => {
         if (limitReached?.resets_at) {
           userData.waitUntil = limitReached.resets_at * 1000
           userData.waitReason = 'Claude rate limit'
@@ -89,7 +77,7 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
           if (overUtilized) {
             console.warn(`[Claude] ⚠ Usage at ${limitReached.pct} — over limit, skipping summary`)
             emitLimitResponse(
-              parser,
+              pipeline,
               userData.waitUntil,
               `This user's usage quota has already been reached (${limitReached.pct})`,
             )
@@ -108,16 +96,16 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
               [],
             )
 
-            parser.scan('\n\n````text\n')
-            await claudeStreamHandler(summaryStream, session, parser, () => {
-              parser.scan('\n````')
-              parser.scan(limitMessageText(resetTime, mins))
-              parser.sendFinalChunk()
+            pipeline.scan('\n\n````text\n')
+            await claudeStreamHandler(summaryStream, session, pipeline, () => {
+              pipeline.scan('\n````')
+              pipeline.scan(limitMessageText(resetTime, mins))
+              pipeline.sendFinalChunk()
             })
           } catch (summaryErr) {
             console.error(`[Claude] Summary failed: ${summaryErr.message}`)
             emitLimitResponse(
-              parser,
+              pipeline,
               userData.waitUntil,
               `Could not generate a conversation summary — usage is already over the limit (${limitReached.pct}), so this request was rejected too`,
             )
@@ -141,13 +129,17 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
         }
 
         if (payload?.resolved?.status === 'exceeded') {
-          emitLimitResponse(parser, userData.waitUntil, `This user's usage quota has been reached`)
+          emitLimitResponse(
+            pipeline,
+            userData.waitUntil,
+            `This user's usage quota has been reached`,
+          )
 
           return
         }
       } catch {}
 
-      return handleRouteError(error, parser)
+      return pipeline.onError(error)
     }
   })
 

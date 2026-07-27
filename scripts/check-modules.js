@@ -4,7 +4,7 @@ const modules = [
   './utils/rate-limiter',
   './utils/cookie-jar',
   './utils/sse-reader',
-  './lib/engine',
+  './engine/compiler',
 ]
 
 const path = require('path')

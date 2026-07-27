@@ -1,4 +1,4 @@
-const instructions = require('../../lib/engine/instructions')
+const instructions = require('../../engine/instructions')
 
 async function setChatGPTInstructions(chatgptApi, userData) {
   if (!userData) return false

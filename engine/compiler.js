@@ -1,8 +1,7 @@
 const instructions = require('./instructions')
 const { getIDEMapper, TOOL_OUTPUT_LIMITS } = require('./tool-defs')
-const { ToolStream } = require('./stream')
 const { matchMcpTrigger } = require('./triggers')
-const { decodeContentParts } = require('../../utils/extract-files')
+const { decodeContentParts } = require('../utils/extract-files')
 
 class ToolCompiler {
   static objects = {}
@@ -451,18 +450,6 @@ ToolCompiler.matchSkill = function (text, raw) {
   })
 
   return { ...skill, bpi }
-}
-
-ToolCompiler.setSSEHeaders = ToolStream.setSSEHeaders
-
-/**
- * Create a parser (ToolStream) pre-bound to this compiler.
- * @param {import('express').Response} res
- * @param {object} session
- * @returns {ToolStream}
- */
-ToolCompiler.prototype.getParser = function (res, session) {
-  return new ToolStream(res, this.provider, this, session)
 }
 
 module.exports = ToolCompiler

@@ -1,4 +1,4 @@
-const ToolCompiler = require('../lib/engine')
+const { StreamPipeline } = require('../engine/pipeline')
 
 /**
  * OpenCode fires two calls on a session's first message: one is a lightweight
@@ -43,10 +43,9 @@ function tryEmitTitle(req, res, provider, session) {
   const { messages = [] } = req.body
   if (!isTitleGenCall(req.ide, messages)) return false
 
-  const compiler = new ToolCompiler(req.ide, provider)
-  ToolCompiler.setSSEHeaders(res)
-  const parser = compiler.getParser(res, session)
-  parser.emitAndEnd(withLiveTime(session.name) || 'New session')
+  StreamPipeline.setSSEHeaders(res)
+  const pipeline = new StreamPipeline(res, session, provider, req.ide)
+  pipeline.emitAndEnd(withLiveTime(session.name) || 'New session')
   return true
 }
 

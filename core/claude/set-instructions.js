@@ -1,4 +1,4 @@
-const instructions = require('../../lib/engine/instructions')
+const instructions = require('../../engine/instructions')
 
 async function setClaudeInstructions(claudeApi, userData, toolCalling = true) {
   if (!userData) return false

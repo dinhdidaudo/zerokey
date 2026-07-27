@@ -1,5 +1,6 @@
 const BPI = require('./bpi')
-const { classifyError } = require('../../utils/errors')
+const ToolCompiler = require('./compiler')
+const { restoreMcpInjections, showAvailableMcpTags, handleSkill } = require('./triggers')
 
 let callCounter = 0
 
@@ -58,7 +59,7 @@ function emitToolCalls(compiler, session, payloads, emit) {
   emit(delta)
 }
 
-class ToolStream {
+class StreamPipeline {
   static setSSEHeaders(res) {
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
@@ -66,10 +67,17 @@ class ToolStream {
     res.setHeader('Access-Control-Allow-Origin', '*')
   }
 
-  constructor(res, model, compiler, session) {
+  /**
+   * @param {import('express').Response} res
+   * @param {object} session
+   * @param {string} provider - 'deepseek' | 'claude' | 'chatgpt'
+   * @param {string} ideName - 'vscode' | 'terax' | 'opencode'
+   */
+  constructor(res, session, provider, ideName) {
+    this.compiler = new ToolCompiler(ideName, provider)
+
     this.res = res
-    this.model = model
-    this.compiler = compiler
+    this.provider = provider
     this.session = session
 
     this.isNewSession = session.parentMessageId == null
@@ -80,12 +88,13 @@ class ToolStream {
     this.toolStartFound = false
     this.buffer = ''
     this.toolBuffers = []
-    this.toolIndex = compiler.tools
+    this.toolIndex = this.compiler.tools
     this.lastChar = ''
-    this._maxToolLen = Math.max(...Object.keys(compiler.tools).map((k) => k.length)) + 3
+    this._maxToolLen = Math.max(...Object.keys(this.compiler.tools).map((k) => k.length)) + 3
 
     const completionId = `chatcmpl-${Date.now()}${Math.random().toString(36).slice(2, 8)}`
     const created = Math.floor(Date.now() / 1000)
+    const model = this.compiler.provider
     const chunk = {
       id: completionId,
       object: 'chat.completion.chunk',
@@ -109,7 +118,7 @@ class ToolStream {
 
     this.emitText = (content, role = 'assistant') => this.emit({ role, content })
 
-    this.uploadFile = async (uploadFn, file, collector) => {
+    this._uploadFile = async (uploadFn, file, collector) => {
       this.emitText(`\nUploading ${file.filename}...`)
       const result = await uploadFn(file)
       this.emitText(' done.\n')
@@ -117,11 +126,8 @@ class ToolStream {
       return result
     }
 
-    // Curry: bind an API's uploadFile once per request and store it on the
-    // parser itself — routes call `parser.bindUploader(api, collector)` once,
-    // formatPrompt then calls `parser.upload(file)` with no extra param needed.
     this.bindUploader = (api, collector) => {
-      this.upload = (file) => this.uploadFile(api.uploadFile.bind(api), file, collector)
+      this.upload = (file) => this._uploadFile(api.uploadFile.bind(api), file, collector)
     }
 
     this.sendFinalChunk = () => {
@@ -134,22 +140,6 @@ class ToolStream {
       this.session.lastUsed = new Date().toISOString()
     }
 
-    this.onError = (err) => {
-      const classified = classifyError(err, this.compiler.provider)
-      console.error(
-        `[${this.compiler.provider}] Stream error (${classified.category}): ${err.message}`,
-      )
-      if (this._finished) return
-      this._finished = true
-      this.emit({}, 'error', {})
-      if (!this.res.writableEnded) {
-        this.res.write(
-          `data: ${JSON.stringify({ error: { message: classified.message, action: classified.action, category: classified.category } })}\n\n`,
-        )
-        this.res.end()
-      }
-    }
-
     this.emitAndEnd = (text) => {
       this.scan(text)
       this.flush()
@@ -159,11 +149,51 @@ class ToolStream {
     }
   }
 
+  /**
+   * Shared pipeline: restore MCP injections, format prompt, build prompt,
+   * show available MCP tags on new sessions, and handle skills.
+   * Returns { prompt } — if a skill was triggered the response is already
+   * ended by handleSkill and the caller should return early.
+   *
+   * @param {Array}  messages
+   * @param {Array}  tools
+   * @param {object} req
+   * @returns {Promise<{prompt: string, handled: boolean}>}
+   */
+  async setup(messages, tools, req) {
+    restoreMcpInjections(this.session, this.compiler.tools, tools)
+
+    const { prompt, skill } = await this.compiler.formatPrompt(messages, this)
+
+    if (skill) {
+      handleSkill(skill, req, this)
+      return { prompt: '', handled: true }
+    }
+
+    const built = this.compiler.buildPrompt(prompt, this)
+
+    if (this.isNewSession) {
+      showAvailableMcpTags(tools, this)
+    }
+
+    return { prompt: built, handled: false }
+  }
+
+  /**
+   * Emit an error through the stream in OpenAI-compatible format.
+   * @param {Error} error
+   */
+  onError(error) {
+    const { toOpenAIError } = require('../utils/errors')
+    console.error(`[${this.provider}] Route error: ${error.message}`)
+    const err = toOpenAIError(error, this.provider)
+    this.emitAndEnd(`\n\n⚠ ${err.error.message}${err.error.action ? ' ' + err.error.action : ''}\n`)
+  }
+
   scan(text) {
     this.buffer += text
 
     while (true) {
-      // STATE: inside tool body, scanning for close bracket
       if (this.inTool) {
         const closeIdx = this.buffer.indexOf(BPI.CLOSE)
         if (closeIdx === -1) return
@@ -181,12 +211,10 @@ class ToolStream {
         continue
       }
 
-      // STATE: saw open bracket, buffering potential tool name
       if (this.toolStartFound) {
         const pipeIdx = this.buffer.indexOf(BPI.SEP)
         if (pipeIdx === -1) {
           if (this.buffer.length <= this._maxToolLen) return
-          // Too long — not a valid tool name
           this.emitText(this.buffer)
           this.buffer = ''
           this.toolStartFound = false
@@ -200,14 +228,12 @@ class ToolStream {
           continue
         }
 
-        // Not a tool — emit open bracket + name + pipe as plain text, keep scanning
         this.emitText(this.buffer.slice(0, pipeIdx + 1))
         this.buffer = this.buffer.slice(pipeIdx + 1)
         this.toolStartFound = false
         continue
       }
 
-      // STATE: normal text, scanning for open bracket
       const startIdx = this.buffer.indexOf(BPI.OPEN)
       if (startIdx === -1) {
         if (this.buffer) this.lastChar = this.buffer[this.buffer.length - 1]
@@ -218,7 +244,6 @@ class ToolStream {
 
       const charBefore = startIdx > 0 ? this.buffer[startIdx - 1] : this.lastChar
       if (charBefore === '`') {
-        // Preceded by a backtick — literal/example syntax, not a real tool call. Skip it.
         this.emitText(this.buffer.slice(0, startIdx + 1))
         this.lastChar = BPI.OPEN
         this.buffer = this.buffer.slice(startIdx + 1)
@@ -239,11 +264,10 @@ class ToolStream {
 
     if (!this.toolStartFound || !this.buffer) return
 
-    // Stream ended mid tool-name — emit as plain text
     this.emitText(this.buffer)
     this.buffer = ''
     this.toolStartFound = false
   }
 }
 
-module.exports = { ToolStream }
+module.exports = { StreamPipeline }
