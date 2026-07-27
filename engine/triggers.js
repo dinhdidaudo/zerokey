@@ -1,15 +1,17 @@
 const path = require('path')
 const { injectMcpAliases } = require('./mcp/inject')
 const { buildAutoAliasMaps, hashTools } = require('./mcp/auto')
-const BROWSER_MCP = require('./mcp/browser')
 const { captureRequest } = require('../utils/capture-request')
+
+const BROWSER_MCP = require('./mcp/browser')
+const PLAYWRIGHT_MCP = require('./mcp/playwright')
 
 // $test scratch root: always the server's own cwd + /test, regardless of
 // where the request came from — never user-supplied.
 const TEST_ROOT = path.join(__dirname, '..')
 
 // Alias-map registry keyed by the same tag used in session.mcpInjected.
-const MCP_ALIAS_MAPS = { $browser: BROWSER_MCP }
+const MCP_ALIAS_MAPS = { $browser: BROWSER_MCP, $playwright: PLAYWRIGHT_MCP }
 
 // Live probe map: tag -> first bpiName in its alias map, used as a cheap
 // "is this alias map already registered on this compiler?" probe. Updated
@@ -74,7 +76,12 @@ function registerAutoMcpServers(reqTools, session) {
  * @param {string} tag - e.g. '$browser' or an auto-registered '$<server>'
  */
 function makePassthroughMcpCall(tag) {
-  return ({ messages, index, compilerTools, session }) => {
+  return ({ messages, index, compilerTools, parser }) => {
+    // vscode-only: $browser/$playwright rely on VS Code's own MCP tool
+    // surface — silently no-op on other IDEs rather than injecting grammar
+    // they have no way to execute.
+    if (parser?.compiler?.ideName !== 'vscode') return
+
     const aliasMap = MCP_ALIAS_MAPS[tag]
     const grammar = injectMcpAliases(aliasMap, compilerTools)
     // const message = messages[index]
@@ -83,7 +90,7 @@ function makePassthroughMcpCall(tag) {
       role: 'internal',
       content: `<bpi_list title="${tag.slice(1)} tools">\n${grammar}\n</bpi_list>`,
     })
-    markMcpInjected(session, tag)
+    markMcpInjected(parser?.session, tag)
   }
 }
 

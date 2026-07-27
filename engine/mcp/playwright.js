@@ -1,9 +1,9 @@
-const BROWSER_MCP = {
+const PLAYWRIGHT_MCP = {
   browser_click: [
     'mcp_playwright_browser_click',
     `⟦browser_click¦target={str}(¦element={str})?(¦doubleClick={bool})?(¦button={left|right|middle})?(¦modifiers={json})?⟧ — click element (modifiers: JSON array of Alt/Control/ControlOrMeta/Meta/Shift)`,
   ],
-  browser_close: ['mcp_playwright_browser_close', `⟦browser_close⟧ — close the page`],
+  browser_close: ['mcp_playwright_browser_close', `⟦browser_close¦call={true}⟧ — close the page`],
   browser_console_messages: [
     'mcp_playwright_browser_console_messages',
     `⟦browser_console_messages¦level={error|warning|info|debug}(¦all={bool})?(¦filename={str})?⟧ — read console messages`,
@@ -46,7 +46,7 @@ const BROWSER_MCP = {
   ],
   browser_navigate_back: [
     'mcp_playwright_browser_navigate_back',
-    `⟦browser_navigate_back⟧ — go back one page`,
+    `⟦browser_navigate_back¦call={true}⟧ — go back one page`,
   ],
   browser_network_request: [
     'mcp_playwright_browser_network_request',
@@ -94,4 +94,4 @@ const BROWSER_MCP = {
   ],
 }
 
-module.exports = BROWSER_MCP
+module.exports = PLAYWRIGHT_MCP
