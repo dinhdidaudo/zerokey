@@ -1,7 +1,12 @@
 const BPI = require('./bpi')
 const ToolCompiler = require('./compiler')
 const { toOpenAIError } = require('../utils/errors')
-const { restoreMcpInjections, showAvailableMcpTags, handleSkill } = require('./triggers')
+const {
+  restoreMcpInjections,
+  showAvailableMcpTags,
+  handleSkill,
+  registerAutoMcpServers,
+} = require('./triggers')
 const { buildRawPrompt } = require('../utils/raw-prompt')
 const { isRealChatSession } = require('../utils/session-classifier')
 const { ephemeralSession } = require('../utils/ephemeral-session')
@@ -200,6 +205,7 @@ class StreamPipeline {
       return { prompt: buildRawPrompt(messages), handled: false }
     }
 
+    registerAutoMcpServers(tools, this.session)
     restoreMcpInjections(this.session, this.compiler.tools, tools)
 
     const { prompt, skill } = await this.compiler.formatPrompt(messages, this)
