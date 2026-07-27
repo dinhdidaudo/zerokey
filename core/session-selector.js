@@ -538,7 +538,7 @@ class SessionSelector {
       deepseek: {
         label: 'DeepSeek',
         factory: () => new DeepSeekAPI(options),
-        init: (api) => api.initialize(parsedFetch?.headers || {}),
+        init: (api) => api.initializeFromJSON(parsedFetch || {}),
       },
       claude: {
         label: 'Claude',
