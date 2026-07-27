@@ -4,10 +4,12 @@ const ToolCompiler = require('../lib/engine')
 const { DeepSeekAPI } = require('../core/deepseek/api')
 const { streamHandler } = require('../core/deepseek/stream-handler')
 const { acquireSlot } = require('../utils/rate-limiter')
-const { validateMessages, handleRouteError } = require('../utils/route-helpers')
+const {
+  validateMessages,
+  handleRouteError,
+  setupCompilerPipeline,
+} = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
-
-const { handleSkill } = require('../lib/engine/triggers')
 
 const deepseekApi = new DeepSeekAPI()
 
@@ -18,34 +20,30 @@ async function buildDeepSeekRouter(parsedFetch, session) {
   const router = express.Router()
 
   router.post('/', async (req, res) => {
-    const { messages = [] } = req.body
+    const { messages = [], tools } = req.body
 
     if (tryEmitTitle(req, res, 'deepseek', session)) return
-
-    const toolCalling = session.toolCalling ?? true
 
     if (!validateMessages(messages, res)) return
 
     const compiler = new ToolCompiler(req.ide, 'deepseek')
-    const isNewSession = session.parentMessageId == null
-    const modelType = isNewSession ? session.model || 'expert' : null
-
     ToolCompiler.setSSEHeaders(res)
     const parser = compiler.getParser(res, session)
+    const modelType = parser.isNewSession ? session.model || 'expert' : null
 
     // Extract and upload files from messages
     const fileIds = []
     parser.bindUploader(deepseekApi, fileIds)
 
-    const { dynamicGrammar } = compiler.syncDynamicTools(req.body.tools || [], session)
-
-    let { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, session, parser)
-
-    if (isNewSession) {
-      prompt = toolCalling ? compiler.buildPrompt(prompt, dynamicGrammar) : prompt
-    }
-
-    if (skill) return handleSkill(skill, req, dynamicGrammar, parser)
+    const { prompt, handled } = await setupCompilerPipeline(
+      compiler,
+      parser,
+      session,
+      messages,
+      tools,
+      req,
+    )
+    if (handled) return
 
     try {
       await acquireSlot('DeepSeek')

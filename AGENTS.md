@@ -85,21 +85,21 @@
   → lib/engine (ToolCompiler)
   → core/claude/api, core/claude/stream-handler, core/claude/set-instructions
   → utils/rate-limiter, utils/route-helpers, utils/is-title-gen
-  → lib/engine/triggers
+  → lib/engine/triggers (handleSkill via route-helpers)
  deepseek.js
   → lib/engine (ToolCompiler)
   → core/deepseek/api, core/deepseek/stream-handler
   → utils/rate-limiter, utils/route-helpers, utils/is-title-gen
-  → lib/engine/triggers
  chatgpt.js
   → lib/engine (ToolCompiler)
-  → lib/engine/instructions
   → core/chatgpt/api, core/chatgpt/stream-handler
   → utils/rate-limiter, utils/route-helpers, utils/is-title-gen
-  → lib/engine/triggers
+ route-helpers.js
+  → lib/engine/triggers (restoreMcpInjections, showAvailableMcpTags, handleSkill)
+  → lib/engine (ToolCompiler.formatPrompt, ToolCompiler.buildPrompt)
  index.js
   → lib/engine/instructions, lib/engine/tool-defs, lib/engine/stream
-  → lib/engine/triggers
+  → lib/engine/triggers (matchMcpTrigger)
   → utils/extract-files
 
 ## RUNTIME-GRAPH
@@ -109,7 +109,7 @@
   → buildRouter(selected) → per-provider route mounted at /v1/chat/completions
  per-request (POST /v1/chat/completions):
   route handler → tryEmitTitle (OpenCode short-circuit)
-  → ToolCompiler.formatPrompt (messages → prompt string, skill detection)
+  → setupCompilerPipeline → restoreMcpInjections → formatPrompt → skill check → buildPrompt → showAvailableMcpTags (new sessions)
   → acquireSlot (rate limit)
   → providerApi.chatCompletion → stream
   → streamHandler → ToolStream.scan (⟦...⟧ parsing, SSE chunk emission)
@@ -174,9 +174,12 @@
  DeepSeek requires PoW challenge per request (WASM-based sha3); retries on SSE error exactly once
  ChatGPT requires sentinel proof token refresh before every conversation turn
  Claude requires org-id extracted from captured fetch URL; org-scoped rate limits with summary fallback at >=90% usage
- formatPrompt is async, signature (messages, isNewSession, uploadFile, session); returns { prompt, skill }
- skill check happens before provider call; triggering message never reaches provider
- session.mcpInjected restored via restoreMcpInjections on new session; survives server restart
+ formatPrompt is async, signature (messages, parser); returns { prompt, skill }
+ buildPrompt signature (userPrompt, parser); inlines instructions on new session unless parser.haveInstructionsAPI
+ skill check happens before provider call; handled in setupCompilerPipeline, triggering message never reaches provider
+ setupCompilerPipeline (route-helpers.js) runs on every request: restoreMcpInjections → formatPrompt → skill → buildPrompt → showAvailableMcpTags
+ session.mcpInjected populated by restoreMcpInjections from current reqTools; once injected, tags stay for session lifetime
+ parser.isNewSession, parser.toolCalling, parser.haveInstructionsAPI set by ToolStream constructor; Claude sets haveInstructionsAPI=true
  Auto MCP registration: mcp_<server>_<tool> naming → $<server> tag, merged into MCP_ALIAS_MAPS
  ToolStream defers tool-call emission for terax/opencode (batched at flush), emits immediately for vscode
  Rate limiter: 5 requests per 15-second window per provider label

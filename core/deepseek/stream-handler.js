@@ -20,7 +20,7 @@ function streamHandler(stream, session, parser, retry) {
   const doRetry = (reason) => {
     cancelled = true
     console.error(`[DeepSeek] Stream error: ${reason}`)
-    parser.scan(`\n\n⚠ Stream error: ${reason}`)
+    parser.scan(`\n\n⚠ Stream error: ${reason}\n`)
 
     if (RETRY_REASONS[reason] && retry) {
       console.debug('[DeepSeek] Retrying...')

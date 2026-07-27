@@ -1,16 +1,37 @@
 # ZeroKey
 
+![License](https://img.shields.io/badge/license-Non--Commercial-blue)
+![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
+![pnpm](https://img.shields.io/badge/pnpm-10.13.1-orange)
+![Self--hosted](https://img.shields.io/badge/self--hosted-yes-8b7bff)
+![Telemetry](https://img.shields.io/badge/telemetry-none-8b7bff)
+
 <video src="https://github.com/user-attachments/assets/6c32c6f7-564f-4e63-bbc1-2e73b1566881" autoplay muted loop playsinline width="100%"></video>
 
 OpenAI-compatible local AI proxy for **DeepSeek**, **Claude**, and **ChatGPT** — use your own browser sessions and your own credentials to connect your own accounts with VS Code (Chat), Terax, or OpenCode. Personal use only. Just paste a fetch() call from DevTools. ZeroKey does not provide shared accounts, API access, or commercial access to third-party services.
 
-> **Using with tools?** On the first message of a new session the LLM reads `AGENTS.md` for project context, runs `git status/diff`, and asks whether to continue before making any changes. Powered by **[skills-extra.md](lib/engine/skills-extra.md)**. If it stops using BPI tools, say: **"Use BPI only."** — or restart and create a fresh session.
+> **Is it safe? How do I start?** See [llms.txt](docs/llms.txt) for a short, machine-readable summary, or the [landing page](https://downloaddoctor.github.io/zerokey/).
 
-> **Predefined tools** — built-in BPI tools work out of the box: `read`, `write`, `replace`, `ls`, `mkdir`, `glob`, `grep`, `cmd`, `cmd_bg`, `cmd_poll`, `cmd_kill`, `fetch`, `errors`, `todos_add`, `todos_set`, `ask`; MCP tool passthrough is planned and will be enabled in a future release
+> **Heads up:** ZeroKey is per-session — one server process is pinned to the session picked at
+> startup. Switching sessions or opening a new chat window in your IDE does **not** refresh which
+> session ZeroKey talks to; restart the server and re-select to pick up a different session.
 
-> **Note:** VS Code (actively tested), Terax, and OpenCode are all tested and working.
+> **Using ZeroKey:** on first message, model reads the target
+> project's `AGENTS.md` (if present) for context. Built-in tools (`read`, `write`, `replace`,
+> `ls`, `mkdir`, `glob`, `grep`, `cmd`, `cmd_bg`, `cmd_poll`, `cmd_kill`, `fetch`, `errors`,
+> `todos_add`, `todos_set`, `ask`) and any MCP tools registered via `tools[]` in the request
+> work out of the box if enabled — see [MCP & Custom Skills](#mcp--custom-skills). If model stops using tools correctly, say: **"Use BPI only."**
 
-> **Session note:** ZeroKey is per-session — one server process is pinned to the session picked at startup. Switching sessions or opening a new chat window in your IDE does **not** refresh which session ZeroKey talks to; you have to restart the server and re-select to pick up a different session.
+## Contents
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Getting Credentials](#getting-credentials)
+- [IDE Integration](#ide-integration)
+- [API Endpoints](#api-endpoints)
+- [MCP & Custom Skills](#mcp--custom-skills)
+- [Session Storage](#session-storage)
+- [License](#license)
 
 ## Features
 
@@ -60,28 +81,14 @@ On startup, the interactive wizard guides you through:
 
 The server auto-finds an available port starting from `7250` and prints the endpoint URLs.
 
-## Endpoints
+## Getting Credentials
 
-| Method | Path                   | Description                      |
-| ------ | ---------------------- | -------------------------------- |
-| `GET`  | `/`                    | API info & available models      |
-| `GET`  | `/health`              | Health check (uptime, timestamp) |
-| `GET`  | `/v1/models`           | List available models            |
-| `GET`  | `/v1/models/:model`    | Get specific model details       |
-| `POST` | `/v1/chat/completions` | Chat completion (streaming)      |
+ZeroKey requires users to provide their own browser session data captured from their own
+accounts. This project does not include, distribute, or request credentials from other users.
+Only use sessions and credentials belonging to you, and ensure your usage complies with the Terms
+of Service of each connected provider.
 
-Full API reference: **[API.md](API.md)**
-
-## Account and Credential Responsibility
-
-ZeroKey requires users to provide their own browser session data captured from
-their own accounts. This project does not include, distribute, or request
-credentials from other users.
-
-Only use sessions and credentials belonging to you, and ensure your usage
-complies with the Terms of Service of each connected provider.
-
-### Getting Credentials
+Pick whichever provider you chose in the setup wizard:
 
 ### DeepSeek
 
@@ -108,6 +115,8 @@ complies with the Terms of Service of each connected provider.
 5. Paste into the startup wizard
 
 ## IDE Integration
+
+VS Code (actively tested), Terax, and OpenCode are all tested and working.
 
 ### Bearer Tokens
 
@@ -138,6 +147,33 @@ The `Authorization: Bearer <ide>` header maps the request to the correct IDE's t
 2. Base URL: `http://localhost:7250/v1`
 3. API key: `opencode`
 4. Submit — worked? Done.
+
+## API Endpoints
+
+| Method | Path                   | Description                      |
+| ------ | ---------------------- | -------------------------------- |
+| `GET`  | `/`                    | API info & available models      |
+| `GET`  | `/health`              | Health check (uptime, timestamp) |
+| `GET`  | `/v1/models`           | List available models            |
+| `GET`  | `/v1/models/:model`    | Get specific model details       |
+| `POST` | `/v1/chat/completions` | Chat completion (streaming)      |
+
+Full API reference: **[API.md](API.md)**
+
+## MCP & Custom Skills
+
+ZeroKey's tool layer is extensible past the built-in BPI tools.
+
+- **MCP auto-registration** — tools named `mcp_<server>_<tool>` in the request's `tools[]` are
+  auto-registered under a `$<server>` skill tag. No manual wiring required.
+- **Built-in Playwright MCP** — a Playwright alias map ships out of the box under `$browser`.
+- **Inspect what's registered** — ask the agent `$mcp` to list currently registered MCP tags for
+  the session, or `$mcp-dump` to dump the full alias map as JSON.
+- **Custom skills** — built-in skills (`$save`, `$test`, `$browser`, `$cwd`, `$mcp`, `$mcp-dump`)
+  are entries in `lib/engine/triggers.js` — each is a trigger word plus a BPI template. Add a new
+  entry to teach the agent a new skill.
+- **Per-IDE tool grammar** — the same tool set compiles differently per IDE (VS Code, Terax,
+  OpenCode) from one shared definition in `lib/engine/tool-defs.js`.
 
 ## Session Storage
 

@@ -10,7 +10,83 @@
     />
     <meta name="theme-color" content="#0a0a0d" />
     <link rel="canonical" href="https://downloaddoctor.github.io/zerokey/" />
+    <link rel="llms" href="/zerokey/llms.txt" />
 
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "ZeroKey",
+        "description": "Self-hosted, personal-use OpenAI-compatible AI proxy for DeepSeek, Claude, and ChatGPT using your own browser sessions. No API keys, no shared accounts, no telemetry.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Windows, macOS, Linux",
+        "url": "https://downloaddoctor.github.io/zerokey/",
+        "downloadUrl": "https://github.com/downloaddoctor/zerokey/releases/latest",
+        "codeRepository": "https://github.com/downloaddoctor/zerokey",
+        "license": "https://github.com/downloaddoctor/zerokey/blob/main/LICENSE",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Does ZeroKey cost anything?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. ZeroKey itself is free and open source. You still need your own DeepSeek, Claude, or ChatGPT account, but you don't pay for a separate API on top of it."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does ZeroKey ever see my password or API key?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. There's no API key involved. You paste a fetch() copied from your own browser's DevTools — ZeroKey only ever sees the session cookie you choose to share, and it stays on your machine."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is using ZeroKey against a provider's Terms of Service?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "You're using your own account through your own browser session, but you are responsible for reading and complying with each provider's Terms of Service. ZeroKey doesn't create access or bypass authentication."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What happens if my session expires?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Re-paste a fresh fetch() in the setup wizard, which takes about 30 seconds. Sessions otherwise persist across server restarts."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Which IDEs does ZeroKey support?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "VS Code (built-in Chat), Terax, and OpenCode today. Any OpenAI-compatible client works against localhost:7250/v1."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I switch AI providers later in ZeroKey?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Restart the setup wizard and pick a different provider. No IDE reconfiguration is needed."
+            }
+          }
+        ]
+      }
+    </script>
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="ZeroKey" />
@@ -658,10 +734,21 @@
           grid-row: auto;
         }
       }
+      body {
+        user-select: none;
+      }
+      code,
+      pre,
+      .terminal-body,
+      .terminal-body * {
+        user-select: text;
+      }
+      .terminal-body .c {
+        user-select: none;
+      }
       @media (max-width: 640px) {
-        .nav-links a {
-          font-size: 11px;
-          padding: 6px 10px;
+        .nav-links {
+          display: none;
         }
         .container {
           padding: 0 20px;
@@ -725,6 +812,185 @@
           opacity: 0;
         }
       }
+      .feature-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-top: 44px;
+      }
+      .feature-item {
+        padding: 26px 24px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      .feature-item .f-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: var(--accent-soft);
+        display: grid;
+        place-items: center;
+        margin-bottom: 16px;
+        color: var(--accent);
+      }
+      .feature-item .f-icon svg {
+        width: 18px;
+        height: 18px;
+      }
+      .feature-item h3 {
+        font-family: var(--font-sans);
+        font-size: 15px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      .feature-item p {
+        font-size: 13px;
+        color: var(--ink-dim);
+        line-height: 1.65;
+      }
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 16px;
+      }
+      .stat-card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        padding: 26px 22px;
+      }
+      .stat-num {
+        font-family: var(--font-mono);
+        font-size: 32px;
+        font-weight: 800;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+        margin-bottom: 6px;
+        line-height: 1;
+      }
+      .stat-label {
+        font-size: 12.5px;
+        color: var(--ink-dim);
+        line-height: 1.5;
+      }
+      .stat-note {
+        margin-top: 20px;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--ink-muted);
+        letter-spacing: 0.02em;
+      }
+      .layer-stack {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .layer {
+        padding: 22px 26px;
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      .layer:last-child {
+        border-bottom: none;
+      }
+      .layer.base {
+        background: var(--surface-raised);
+      }
+      .layer-label {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--accent);
+        font-weight: 700;
+        min-width: 170px;
+      }
+      .layer-desc {
+        font-size: 13.5px;
+        color: var(--ink-dim);
+        flex: 1 1 220px;
+        line-height: 1.6;
+      }
+      .layer-mods {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .layer-mod {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        padding: 5px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--ink-dim);
+        background: var(--bg);
+      }
+      footer.big-footer {
+        text-align: left;
+        padding: 70px 0 40px;
+      }
+      .footer-top {
+        display: grid;
+        grid-template-columns: 1.5fr repeat(4, 1fr);
+        gap: 30px;
+        padding-bottom: 36px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 24px;
+      }
+      .footer-brand p {
+        font-size: 13px;
+        color: var(--ink-dim);
+        max-width: 32ch;
+        margin-top: 14px;
+        line-height: 1.7;
+      }
+      .footer-col h4 {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-muted);
+        margin-bottom: 14px;
+      }
+      .footer-col a {
+        display: block;
+        font-size: 13px;
+        color: var(--ink-dim);
+        text-decoration: none;
+        margin-bottom: 10px;
+      }
+      .footer-col a:hover {
+        color: var(--ink);
+      }
+      .footer-bottom {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 12px;
+        color: var(--ink-muted);
+        font-family: var(--font-mono);
+      }
+      @media (max-width: 860px) {
+        .feature-row {
+          grid-template-columns: 1fr;
+        }
+        .footer-top {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 640px) {
+        .footer-top {
+          grid-template-columns: 1fr;
+        }
+      }
     </style>
   </head>
   <body>
@@ -745,6 +1011,9 @@
           ><span>ZeroKey</span></a
         >
         <div class="nav-links">
+          <a href="#why">/why</a>
+          <a href="#architecture">/architecture</a>
+          <a href="#extend">/extensibility</a>
           <a href="#providers">/providers</a>
           <a href="#ides">/ide-setup</a>
           <a href="#start">/quickstart</a>
@@ -778,10 +1047,10 @@
               </p>
               <div class="hero-cta">
                 <a
-                  class="btn btn-primary"
-                  href="https://github.com/downloaddoctor/zerokey"
-                  target="_blank"
+                  class="btn btn-primary js-get-zerokey"
+                  href="https://github.com/downloaddoctor/zerokey/releases/latest/download/zerokey.bat"
                   rel="noopener"
+                  download
                   >Get ZeroKey free →</a
                 >
                 <a class="btn btn-ghost" href="#start">See the 3-step setup</a>
@@ -810,8 +1079,196 @@
               <span class="t-dim">→ status: </span><span class="t-hl">ready ■</span>
             </div>
           </div>
+          <div class="feature-row">
+            <div class="feature-item">
+              <div class="f-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="11" width="18" height="10" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </div>
+              <h3>No API Keys</h3>
+              <p>Your browser session is the credential. Nothing to generate, rotate, or leak.</p>
+            </div>
+            <div class="feature-item">
+              <div class="f-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2 2 7l10 5 10-5-10-5Z" />
+                  <path d="m2 17 10 5 10-5" />
+                  <path d="m2 12 10 5 10-5" />
+                </svg>
+              </div>
+              <h3>Self-Hosted</h3>
+              <p>
+                Runs entirely on your machine. No relay servers, no telemetry, no third party in
+                between.
+              </p>
+            </div>
+            <div class="feature-item">
+              <div class="f-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                  <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                  <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                  <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+                </svg>
+              </div>
+              <h3>OpenAI-Compatible</h3>
+              <p>
+                Standard
+                <code style="font-family: var(--font-mono); color: var(--accent); font-size: 12px"
+                  >/v1/chat/completions</code
+                >
+                — any IDE that speaks OpenAI, speaks ZeroKey.
+              </p>
+            </div>
+          </div>
         </div>
       </header>
+    </div>
+    <div class="container">
+      <section id="why">
+        <div class="section-eyebrow">/why-zerokey</div>
+        <h2>The proxy, not the platform.</h2>
+        <p class="section-lead">
+          ZeroKey doesn't sell access — it forwards your own session to your own IDE. Every number
+          below is a fact about the project, not a growth metric.
+        </p>
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-num">3</div>
+            <div class="stat-label">Providers supported — DeepSeek, Claude, ChatGPT</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num">3</div>
+            <div class="stat-label">IDEs wired in — VS Code, Terax, OpenCode</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num">0</div>
+            <div class="stat-label">API keys, telemetry pings, or hosted servers</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num">1</div>
+            <div class="stat-label">
+              Command to install and start —
+              <code style="font-family: var(--font-mono); color: var(--accent); font-size: 12px"
+                >pnpm start</code
+              >
+            </div>
+          </div>
+        </div>
+        <p class="stat-note">
+          Every number above is a fact about this codebase — nothing modeled or estimated.
+        </p>
+      </section>
+    </div>
+    <div class="container">
+      <section id="architecture">
+        <div class="section-eyebrow">/architecture</div>
+        <h2>Between your IDE and your session.</h2>
+        <p class="section-lead">
+          ZeroKey sits in one place: a local process translating OpenAI-shaped requests into the
+          exact calls your browser would make — then streaming the answer straight back.
+        </p>
+        <div class="layer-stack">
+          <div class="layer">
+            <div class="layer-label">IDE Layer</div>
+            <div class="layer-desc">Any OpenAI-compatible client calling localhost:7250/v1.</div>
+            <div class="layer-mods">
+              <span class="layer-mod">VS Code</span><span class="layer-mod">Terax</span
+              ><span class="layer-mod">OpenCode</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label">ZeroKey Core</div>
+            <div class="layer-desc">Routes, streams, and manages sessions per provider.</div>
+            <div class="layer-mods">
+              <span class="layer-mod">Chat Router</span><span class="layer-mod">Tool Compiler</span
+              ><span class="layer-mod">Rate Limiter</span><span class="layer-mod">SSE Handler</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label">Provider Layer</div>
+            <div class="layer-desc">Protocol-specific clients — PoW, sentinel tokens, org-id.</div>
+            <div class="layer-mods">
+              <span class="layer-mod">DeepSeek API</span><span class="layer-mod">Claude API</span
+              ><span class="layer-mod">ChatGPT API</span>
+            </div>
+          </div>
+          <div class="layer base">
+            <div class="layer-label">Your Session</div>
+            <div class="layer-desc">
+              The browser cookies you already have — pasted once, never uploaded anywhere.
+            </div>
+            <div class="layer-mods">
+              <span class="layer-mod">Cookie Jar</span><span class="layer-mod">Your Account</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="container">
+      <section id="extend">
+        <div class="section-eyebrow">/extensibility</div>
+        <h2>Built to grow with your workflow.</h2>
+        <p class="section-lead">
+          ZeroKey isn't a fixed pipeline — the tool layer is designed to be extended. MCP servers,
+          custom skills, and per-IDE tool grammar all plug into the same engine.
+        </p>
+        <div class="card-grid">
+          <div class="card">
+            <h3>MCP Integration</h3>
+            <div class="card-tagline">Auto-registration · Alias Maps</div>
+            <p>
+              Tools named
+              <code style="font-family: var(--font-mono); color: var(--accent); font-size: 12px"
+                >mcp_&lt;server&gt;_&lt;tool&gt;</code
+              >
+              auto-register as a
+              <code style="font-family: var(--font-mono); color: var(--accent); font-size: 12px"
+                >$&lt;server&gt;</code
+              >
+              skill tag — no manual wiring. A built-in Playwright MCP alias map ships out of the
+              box, and server connections survive restarts via session-level restore. Ask the agent
+              <code style="font-family: var(--font-mono); color: var(--accent); font-size: 12px"
+                >$mcp</code
+              >
+              to list registered tags, or
+              <code style="font-family: var(--font-mono); color: var(--accent); font-size: 12px"
+                >$mcp-dump</code
+              >
+              to see the full tool map for the session.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Custom Skills & Triggers</h3>
+            <div class="card-tagline">Trigger Words · BPI Templates</div>
+            <p>
+              Built-in skills like
+              <code style="font-family: var(--font-mono); color: var(--accent); font-size: 12px"
+                >$save</code
+              >,
+              <code style="font-family: var(--font-mono); color: var(--accent); font-size: 12px"
+                >$test</code
+              >, and
+              <code style="font-family: var(--font-mono); color: var(--accent); font-size: 12px"
+                >$browser</code
+              >
+              are just entries in a triggers array — add a trigger word and a BPI template to teach
+              the agent a new skill.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Session & Tool Management</h3>
+            <div class="card-tagline">Per-Session Hashing · Multi-IDE</div>
+            <p>
+              Dynamic tools passed per-request are hashed per session for cheap change detection.
+              The same tool set is compiled differently per IDE — VS Code, Terax, and OpenCode each
+              get their own grammar from one shared definition.
+            </p>
+          </div>
+        </div>
+      </section>
     </div>
     <div class="container">
       <section id="providers">
@@ -928,12 +1385,15 @@
           </div>
           <div class="step">
             <div class="step-num">02</div>
-            <h3>Paste your session (30 sec)</h3>
+            <h3>Run the wizard (30 sec)</h3>
             <p>
-              Open DevTools on DeepSeek, Claude, or ChatGPT → Network tab → copy any request as
+              Pick a
+              <strong>Provider</strong> (DeepSeek, Claude, or ChatGPT), paste a
               <code style="font-family: var(--font-mono); font-size: 12px; color: var(--accent)"
                 >fetch()</code
-              >. Paste it into the wizard.
+              >
+              copied from DevTools → Network tab as your <strong>User</strong>, then pick or create
+              a <strong>Session</strong>.
             </p>
           </div>
           <div class="step">
@@ -1041,31 +1501,97 @@
         </p>
         <div class="hero-cta" style="justify-content: center; display: flex">
           <a
-            class="btn btn-primary"
-            href="https://github.com/downloaddoctor/zerokey"
-            target="_blank"
+            class="btn btn-primary js-get-zerokey"
+            href="https://github.com/downloaddoctor/zerokey/releases/latest/download/zerokey.bat"
             rel="noopener"
+            download
             >Get ZeroKey free →</a
           >
           <a class="btn btn-ghost" href="#start">See the 3-step setup</a>
         </div>
       </section>
-      <footer>
-        <p>
-          ZeroKey — self-hosted personal-use proxy.
-          <a href="https://github.com/downloaddoctor/zerokey" target="_blank" rel="noopener"
-            >github.com/downloaddoctor/zerokey</a
+      <footer class="big-footer">
+        <div class="footer-top">
+          <div class="footer-brand">
+            <a class="brand" href="#"
+              ><span class="brand-mark"
+                ><svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path
+                    d="M7 16 L13 22 L25 10"
+                    stroke="var(--bg)"
+                    stroke-width="3"
+                    fill="none"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  /></svg></span
+              ><span>ZeroKey</span></a
+            >
+            <p>
+              A self-hosted, personal-use proxy that turns your own browser session into a local
+              OpenAI-compatible endpoint. No API keys, no shared accounts, no telemetry.
+            </p>
+            <div class="footer-badge">
+              <span class="footer-badge-dot"></span>Built using ZeroKey
+            </div>
+          </div>
+          <div class="footer-col">
+            <h4>Providers</h4>
+            <a href="#providers">DeepSeek</a>
+            <a href="#providers">Claude</a>
+            <a href="#providers">ChatGPT</a>
+          </div>
+          <div class="footer-col">
+            <h4>IDEs</h4>
+            <a href="#ides">VS Code</a>
+            <a href="#ides">Terax</a>
+            <a href="#ides">OpenCode</a>
+          </div>
+          <div class="footer-col">
+            <h4>Project</h4>
+            <a href="#start">Quickstart</a>
+            <a href="#architecture">Architecture</a>
+            <a href="#faq">FAQ</a>
+            <a href="https://github.com/downloaddoctor/zerokey" target="_blank" rel="noopener"
+              >GitHub</a
+            >
+            <a href="llms.txt" target="_blank" rel="noopener">llms.txt</a>
+          </div>
+          <div class="footer-col">
+            <h4>Legal</h4>
+            <a href="https://github.com/downloaddoctor/zerokey" target="_blank" rel="noopener"
+              >License (MIT)</a
+            >
+            <a href="#faq">Terms of Service Notice</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <span
+            >Licensed for personal, non-commercial use only. Users are responsible for complying
+            with each provider's Terms of Service.</span
           >
-        </p>
-        <p>
-          Licensed for personal, non-commercial use only. ZeroKey does not provide access to
-          third-party AI services, shared accounts, or credentials. Users are responsible for using
-          their own accounts and complying with each provider's Terms of Service.
-        </p>
-        <div class="footer-badge"><span class="footer-badge-dot"></span>Built using ZeroKey</div>
+          <span
+            >© 2026 ZeroKey ·
+            <a href="https://github.com/downloaddoctor/zerokey" target="_blank" rel="noopener"
+              >github.com/downloaddoctor/zerokey</a
+            ></span
+          >
+        </div>
       </footer>
     </div>
     <script>
+      /* OS-aware download link for primary CTA */
+      ;(function () {
+        var isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent)
+        var isLinux =
+          /Linux/.test(navigator.platform || navigator.userAgent) &&
+          !/Android/.test(navigator.userAgent)
+        if (!isMac && !isLinux) return
+        var url = 'https://github.com/downloaddoctor/zerokey/releases/latest/download/zerokey.sh'
+        document.querySelectorAll('.js-get-zerokey').forEach(function (a) {
+          a.setAttribute('href', url)
+        })
+      })()
+
       /* Preloader */
       window.addEventListener('load', function () {
         var pre = document.getElementById('preloader')

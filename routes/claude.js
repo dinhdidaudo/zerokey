@@ -5,10 +5,12 @@ const { ClaudeAPI } = require('../core/claude/api')
 const { claudeStreamHandler } = require('../core/claude/stream-handler')
 const { setClaudeInstructions } = require('../core/claude/set-instructions')
 const { acquireSlot } = require('../utils/rate-limiter')
-const { validateMessages, handleRouteError } = require('../utils/route-helpers')
+const {
+  validateMessages,
+  handleRouteError,
+  setupCompilerPipeline,
+} = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
-
-const { handleSkill } = require('../lib/engine/triggers')
 
 const claudeApi = new ClaudeAPI()
 
@@ -19,11 +21,10 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
   const router = express.Router()
 
   router.post('/', async (req, res) => {
-    const { messages = [], reasoning_effort: reasoningEffort = null } = req.body
+    const { messages = [], tools, reasoning_effort: reasoningEffort = null } = req.body
 
     if (tryEmitTitle(req, res, 'claude', session)) return
 
-    const toolCalling = session.toolCalling ?? true
     const model = session.model
 
     if (!validateMessages(messages, res)) return
@@ -41,19 +42,23 @@ async function buildClaudeRouter(parsedFetch, session, userData = null) {
       return
     }
 
+    if (parser.isNewSession) {
+      await setClaudeInstructions(claudeApi, userData, parser.toolCalling)
+      parser.haveInstructionsAPI = true
+    }
+
     const fileIds = []
     parser.bindUploader(claudeApi, fileIds)
-    const isNewSession = session.parentMessageId == null
 
-    const { dynamicGrammar } = compiler.syncDynamicTools(req.body.tools || [], session)
-
-    const { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, session, parser)
-
-    if (skill) return handleSkill(skill, req, dynamicGrammar, parser)
-
-    if (isNewSession) {
-      await setClaudeInstructions(claudeApi, userData, dynamicGrammar, toolCalling)
-    }
+    const { prompt, handled } = await setupCompilerPipeline(
+      compiler,
+      parser,
+      session,
+      messages,
+      tools,
+      req,
+    )
+    if (handled) return
 
     await acquireSlot('Claude')
 

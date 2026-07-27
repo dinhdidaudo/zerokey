@@ -1,13 +1,15 @@
 const express = require('express')
 
 const ToolCompiler = require('../lib/engine')
-const instructions = require('../lib/engine/instructions')
 const { ChatGPTAPI } = require('../core/chatgpt/api')
 const { chatgptStreamHandler } = require('../core/chatgpt/stream-handler')
 const { acquireSlot } = require('../utils/rate-limiter')
-const { validateMessages, handleRouteError } = require('../utils/route-helpers')
+const {
+  validateMessages,
+  handleRouteError,
+  setupCompilerPipeline,
+} = require('../utils/route-helpers')
 const { tryEmitTitle } = require('../utils/is-title-gen')
-const { handleSkill } = require('../lib/engine/triggers')
 
 const chatgptApi = new ChatGPTAPI()
 
@@ -18,11 +20,10 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
   const router = express.Router()
 
   router.post('/', async (req, res) => {
-    const { messages = [] } = req.body
+    const { messages = [], tools } = req.body
 
     if (tryEmitTitle(req, res, 'chatgpt', session)) return
 
-    const toolCalling = session.toolCalling ?? true
     const model = session.model || 'auto'
     if (!validateMessages(messages, res)) return
 
@@ -32,18 +33,16 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
 
     const attachments = []
     parser.bindUploader(chatgptApi, attachments)
-    const isNewSession = session.parentMessageId == null
 
-    const { dynamicGrammar } = compiler.syncDynamicTools(req.body.tools || [], session)
-
-    let { prompt, skill } = await compiler.formatPrompt(messages, isNewSession, session, parser)
-
-    if (skill) return handleSkill(skill, req, dynamicGrammar, parser)
-
-    if (isNewSession && toolCalling) {
-      // await setChatGPTInstructions(chatgptApi, userData)
-      prompt = instructions.getFull() + '\n\n' + dynamicGrammar + '\n\n' + prompt
-    }
+    const { prompt, handled } = await setupCompilerPipeline(
+      compiler,
+      parser,
+      session,
+      messages,
+      tools,
+      req,
+    )
+    if (handled) return
 
     await acquireSlot('ChatGPT')
 
