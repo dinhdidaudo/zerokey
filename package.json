@@ -1,6 +1,6 @@
 {
   "name": "zerokey",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "description": "OpenAI-compatible AI proxy for DeepSeek, Claude & ChatGPT — no API keys, real browser sessions",
   "main": "server.js",
   "engines": {
