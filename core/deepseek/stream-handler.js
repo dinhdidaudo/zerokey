@@ -1,7 +1,8 @@
 const { readSSE } = require('../../utils/sse-reader')
 const RETRY_REASONS = {
   'Messages too frequent. Try again later.': true,
-  'Server is busy. Try again later.': true,
+  'Server busy, please try again later.': true,
+  'A message is being generated, please try again later.': true,
 }
 
 /**

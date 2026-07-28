@@ -39,6 +39,14 @@ async function buildDeepSeekRouter(parsedFetch, session) {
     const { prompt, handled } = await pipeline.setup(messages, tools, req)
     if (handled) return
 
+    if (pipeline.ephemeralMode) {
+      pipeline.onFinalChunk = () => {
+        if (activeSession.chatSessionId) {
+          deepseekApi.deleteSession(activeSession.chatSessionId).catch(() => {})
+        }
+      }
+    }
+
     try {
       await acquireSlot('DeepSeek')
       const deepseekStream = await deepseekApi.chatCompletion(

@@ -24,7 +24,7 @@
    pow.js # ChatGPTProofOfWork — sentinel proof token decode/generate/solve
   session-selector.js # session-selector.js
  engine/
-  compiler.js # ToolCompiler — singleton per IDE×provider: formatPrompt, buildPrompt, compile/parse/emit, matchSkill
+  compiler.js # ToolCompiler — singleton per IDE×provider: uploadAndGetMessages, uploadAndFormatPrompt, uploadAndFormatPromptForRaw, buildPrompt, compile/parse/emit, matchSkill
   pipeline.js # StreamPipeline — SSE stream head: scanning, emitting, MCP injection, skill handling, error formatting
   instructions.js # Instructions — lazy-loads instructions.md + skills-extra.md, hash for change detection
   instructions.md # Base system prompt (agent rules, BPI syntax, execution model, output contract)
@@ -51,7 +51,7 @@
   har-to-capture.js # harToCapture — HAR JSON → network-capture format
   capture-request.js # captureRequest — dumps req.body to temp/captures/*.json ($req skill + unconditional on DeepSeek requests)
   ephemeral-session.js # ephemeralSession — clones session with chatSessionId/parentMessageId nulled, for ephemeral/utility calls
-  raw-prompt.js # buildRawPrompt — flat ROLE: content join, no instructions/skill/tool-grammar injection, for ephemeral calls
+  sequential-queue.js # sequentialQueue — Express middleware serializing all requests through one app instance, one in flight at a time
   session-classifier.js # isRealChatSession — per-IDE fingerprinted system-prompt prefix match; default-deny classifies non-matching system-first calls as ephemeral
   logger.js # console color wrappers (debug, info, success, warn, error)
   rate-limiter.js # acquireSlot — per-provider rate limiting (5 req / 15s window)
@@ -77,7 +77,7 @@
   → express
   → routes/info, routes/health, routes/models, core/chat-router
   → core/session-selector
-  → utils/find-port, utils/sync-ide-config, utils/logger, utils/errors
+  → utils/find-port, utils/sync-ide-config, utils/logger, utils/errors, utils/sequential-queue
  chat-router.js
   → routes/claude, routes/chatgpt, routes/deepseek
  session-selector.js
@@ -100,7 +100,7 @@
   → engine/compiler (ToolCompiler)
   → engine/triggers (restoreMcpInjections, showAvailableMcpTags, handleSkill)
   → utils/errors (classifyError)
-  → utils/session-classifier (isRealChatSession), utils/ephemeral-session (ephemeralSession), utils/raw-prompt (buildRawPrompt)
+  → utils/session-classifier (isRealChatSession), utils/ephemeral-session (ephemeralSession)
  compiler.js
   → engine/instructions, engine/tool-defs
   → engine/triggers (matchMcpTrigger)
@@ -112,18 +112,21 @@
   → syncIdeConfig (writes VS Code chatLanguageModels.json)
   → buildRouter(selected) → per-provider route mounted at /v1/chat/completions
  per-request (POST /v1/chat/completions):
+  sequentialQueue middleware serializes all requests through the mounted router (one in flight at a time, promise-chained)
   route handler → new StreamPipeline(res, session, provider, ide, messages)
   → pipeline ctor: isRealChatSession(ide, messages) classifies real chat turn vs ephemeral utility call (title-gen, tool-optimizer, etc.)
-   → real: pipeline.session = session, pipeline.rawMode = false
-   → ephemeral: pipeline.session = ephemeralSession(session) (clone, chatSessionId/parentMessageId nulled, mutations discarded), pipeline.rawMode = true
+   → real: pipeline.session = session, pipeline.ephemeralMode = false, pipeline.rawMode = !pipeline.toolCalling
+   → ephemeral: pipeline.session = ephemeralSession(session) (clone, chatSessionId/parentMessageId nulled, mutations discarded), pipeline.ephemeralMode = true, pipeline.rawMode = true
   → route uses pipeline.session (activeSession) for all chatSessionId/parentMessageId/stream-handler calls downstream
+  → route sets pipeline.onFinalChunk (when pipeline.ephemeralMode) to delete the provider-side ephemeral chat session once the response finishes
   → pipeline.setup(messages, tools, req):
-   → rawMode=true: returns buildRawPrompt(messages) directly, skips formatPrompt/buildPrompt/skill-matching/MCP-tag scan
-   → rawMode=false: restoreMcpInjections → formatPrompt → skill check → buildPrompt → showAvailableMcpTags
+   → ephemeralMode: compiler.uploadAndFormatPromptForRaw(messages, pipeline, upload=false) — flat ROLE: content prompt, attachments decoded but not uploaded, skips skill-matching/MCP-tag scan
+   → rawMode (non-ephemeral, !toolCalling): compiler.uploadAndFormatPromptForRaw(messages, pipeline, upload=true) — flat prompt, attachments uploaded via pipeline.upload
+   → toolCalling: registerAutoMcpServers → restoreMcpInjections → showAvailableMcpTags (new session) → compiler.uploadAndFormatPrompt (uploads attachments, skill check) → buildPrompt
   → acquireSlot (rate limit)
   → providerApi.chatCompletion → stream
   → streamHandler → pipeline.scan (rawMode: emits text straight through, skips BPI tool-call parser; else BPI TOOL parsing, SSE chunk emission)
-  → pipeline.sendFinalChunk → activeSession.lastUsed updated (ephemeral clone never persisted to user.sessions)
+  → pipeline.sendFinalChunk → activeSession.lastUsed updated (ephemeral clone never persisted to user.sessions) → pipeline.onFinalChunk fires if set
 
 ## SCHEMA
  # OpenAI-compatible chat completions (subset)
@@ -182,16 +185,18 @@
  Session state (chatSessionId, parentMessageId, lastUsed, todos) is mutated in-memory; persisted to users.json only on shutdown via selector.flush()
  CookieJar is shared per API client instance; cookies captured from response Set-Cookie headers
  DeepSeek requires PoW challenge per request (WASM-based sha3); retries on SSE error exactly once
- ChatGPT requires sentinel proof token refresh before every conversation turn
- Claude requires org-id extracted from captured fetch URL; org-scoped rate limits with summary fallback at >=90% usage
- StreamPipeline is the head — routes create it, it internally wires ToolCompiler (singleton per IDE×provider)
- formatPrompt is async, signature (messages, pipeline); returns { prompt, skill }
+ uploadAndFormatPrompt is async, signature (messages, pipeline); returns { prompt, skill }; uploadAndFormatPromptForRaw(messages, pipeline, upload) returns { prompt } only — both share the file-decode/upload loop via uploadAndGetMessages(messages, pipeline, upload)
  buildPrompt signature (userPrompt, pipeline); inlines instructions on new session unless pipeline.haveInstructionsAPI
  skill check happens before provider call; handled in pipeline.setup(), triggering message never reaches provider
  session.mcpInjected populated by restoreMcpInjections from current reqTools; once injected, tags stay for session lifetime
- pipeline.isNewSession, pipeline.toolCalling, pipeline.haveInstructionsAPI set by StreamPipeline constructor; Claude sets haveInstructionsAPI=true
+ pipeline.isNewSession, pipeline.toolCalling, pipeline.haveInstructionsAPI, pipeline.ephemeralMode set by StreamPipeline constructor; Claude sets haveInstructionsAPI=true
  Auto MCP registration: mcp_<server>_<tool> naming → $<server> tag, merged into MCP_ALIAS_MAPS
  StreamPipeline defers tool-call emission for terax/opencode (batched at flush), emits immediately for vscode
+ Rate limiter: 5 requests per 15-second window per provider label
+ Error logs append to temp/errors.txt, rotated at 1MB
+ VS Code model sync writes to %APPDATA%/Code/User/chatLanguageModels.json
+ sequentialQueue (utils/sequential-queue.js) serializes every /v1/chat/completions request app-wide; no concurrent handling
+ Ephemeral chat sessions are deleted provider-side via pipeline.onFinalChunk (set per-route when pipeline.ephemeralMode), fired from pipeline.sendFinalChunkflush(), emits immediately for vscode
  Rate limiter: 5 requests per 15-second window per provider label
  Error logs append to temp/errors.txt, rotated at 1MB
  VS Code model sync writes to %APPDATA%/Code/User/chatLanguageModels.json

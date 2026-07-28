@@ -29,6 +29,14 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
     const { prompt, handled } = await pipeline.setup(messages, tools, req)
     if (handled) return
 
+    if (pipeline.ephemeralMode) {
+      pipeline.onFinalChunk = () => {
+        if (activeSession.chatSessionId) {
+          chatgptApi.deleteSession(activeSession.chatSessionId).catch(() => {})
+        }
+      }
+    }
+
     await acquireSlot('ChatGPT')
 
     try {
@@ -40,7 +48,7 @@ async function buildChatGPTRouter(parsedFetch, session, _userData = null) {
         attachments,
       )
 
-      chatgptStreamHandler(stream, activeSession, pipeline)
+      await chatgptStreamHandler(stream, activeSession, pipeline)
     } catch (error) {
       return pipeline.onError(error)
     }

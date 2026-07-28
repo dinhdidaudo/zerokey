@@ -63,8 +63,31 @@ class ToolCompiler {
     ToolCompiler.objects[cacheKey] = this
   }
 
-  async formatPrompt(messages, parser) {
+  async uploadAndGetMessages(messages, parser, upload = true) {
     console.debug('[MESSAGES]', messages.length)
+
+    let i = messages.length - 1
+    for (; i >= 0; i--) if (messages[i].role === 'assistant') break
+    i++
+
+    const requestMessages = []
+    for (; i < messages.length; i++) {
+      const mes = messages[i]
+      const files = decodeContentParts(mes.content)
+      if (files.length) {
+        for (const file of files) {
+          if (upload) await parser.upload(file)
+        }
+        continue
+      }
+
+      requestMessages.push(mes)
+    }
+
+    return requestMessages
+  }
+
+  async uploadAndFormatPrompt(messages, parser) {
     const message = messages[messages.length - 1]
 
     let skill = null
@@ -76,36 +99,25 @@ class ToolCompiler {
         if (skill) {
           console.info('[SKILL]', skill.trigger)
           parser.emitText(`\n**SKILL TRIGGER:** \`${skill.trigger}\`\n`)
+
+          // Passthrough skills (e.g. $browser) don't short-circuit the stream —
+          // they register tools into this.tools and inline their grammar into the
+          // triggering message, then the request continues to the provider as normal.
+          if (skill.passthrough) {
+            console.info('[SKILL]', skill.trigger, 'is passthrough!')
+            skill.call({ messages, index: messages.length - 1, compilerTools: this.tools, parser })
+            skill = null
+          }
         }
       } catch (e) {
         console.error('[SKILL] rawUser check failed:', e.message)
       }
     }
 
-    // Passthrough skills (e.g. $browser) don't short-circuit the stream —
-    // they register tools into this.tools and inline their grammar into the
-    // triggering message, then the request continues to the provider as normal.
-    if (skill?.passthrough && typeof message.content === 'string') {
-      console.info('[SKILL]', skill.trigger, 'is passthrough!')
-      skill.call({ messages, index: messages.length - 1, compilerTools: this.tools, parser })
-      skill = null
-    }
-
-    let i = messages.length - 1
-    for (; i >= 0; i--) if (messages[i].role === 'assistant') break
-    i++
-
+    const requestMessages = await this.uploadAndGetMessages(messages, parser)
     const results = []
-    for (; i < messages.length; i++) {
-      const mes = messages[i]
-      const files = decodeContentParts(mes.content)
-      if (files.length) {
-        for (const file of files) {
-          await parser.upload(file)
-        }
-        continue
-      }
 
+    for (const mes of requestMessages) {
       const handler = this._handlers[mes.role]
       const result = handler
         ? await handler(mes, messages, parser.isNewSession)
@@ -115,6 +127,18 @@ class ToolCompiler {
     }
 
     return { prompt: results.join('\n\n'), skill }
+  }
+
+  async uploadAndFormatPromptForRaw(messages, parser, upload = false) {
+    const requestMessages = await this.uploadAndGetMessages(messages, parser, upload)
+    const results = []
+
+    for (const mes of requestMessages) {
+      const content = typeof mes.content === 'string' ? mes.content : JSON.stringify(mes.content)
+      results.push(`${mes.role.toUpperCase()}: ${content}`)
+    }
+
+    return { prompt: results.join('\n\n') }
   }
 
   buildPrompt(userPrompt, parser) {

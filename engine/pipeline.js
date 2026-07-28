@@ -7,7 +7,6 @@ const {
   handleSkill,
   registerAutoMcpServers,
 } = require('./triggers')
-const { buildRawPrompt } = require('../utils/raw-prompt')
 const { isRealChatSession } = require('../utils/session-classifier')
 const { ephemeralSession } = require('../utils/ephemeral-session')
 
@@ -104,11 +103,12 @@ class StreamPipeline {
     this.res = res
     this.provider = provider
     this.session = isReal ? session : ephemeralSession(session)
-    this.rawMode = !isReal
 
     this.isNewSession = this.session.parentMessageId == null
     this.toolCalling = this.session.toolCalling ?? false
     this.haveInstructionsAPI = false
+    this.ephemeralMode = !isReal
+    this.rawMode = this.ephemeralMode ? true : !this.toolCalling
 
     this.inTool = false
     this.toolStartFound = false
@@ -170,6 +170,7 @@ class StreamPipeline {
     this.res.write('data: [DONE]\n\n')
     this.res.end()
     this.session.lastUsed = new Date().toISOString()
+    if (this.onFinalChunk) this.onFinalChunk()
   }
 
   // ── file upload ────────────────────────────────────────────────────────
@@ -201,25 +202,30 @@ class StreamPipeline {
    * @returns {Promise<{prompt: string, handled: boolean}>}
    */
   async setup(messages, tools, req) {
+    if (this.ephemeralMode) {
+      console.warn('[SERVER] EPHEMERAL CALL')
+      const { prompt } = await this.compiler.uploadAndFormatPromptForRaw(messages, this, false)
+      return { prompt, handled: false }
+    }
+
     if (this.rawMode) {
-      return { prompt: buildRawPrompt(messages), handled: false }
+      const { prompt } = await this.compiler.uploadAndFormatPromptForRaw(messages, this, true)
+      return { prompt, handled: false }
     }
 
     registerAutoMcpServers(tools, this.session)
     restoreMcpInjections(this.session, this.compiler.tools, tools)
 
-    const { prompt, skill } = await this.compiler.formatPrompt(messages, this)
+    const { prompt, skill } = await this.compiler.uploadAndFormatPrompt(messages, this)
 
     if (skill) {
       handleSkill(skill, req, this)
       return { prompt: '', handled: true }
     }
 
-    const built = this.compiler.buildPrompt(prompt, this)
+    if (this.isNewSession) showAvailableMcpTags(tools, this)
 
-    if (this.isNewSession) {
-      showAvailableMcpTags(tools, this)
-    }
+    const built = this.compiler.buildPrompt(prompt, this)
 
     return { prompt: built, handled: false }
   }

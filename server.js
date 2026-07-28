@@ -12,6 +12,7 @@ const { SessionSelector } = require('./core/session-selector')
 const { toOpenAIError } = require('./utils/errors')
 const { findPort } = require('./utils/find-port')
 const { syncIdeConfig } = require('./utils/sync-ide-config')
+const { sequentialQueue } = require('./utils/sequential-queue')
 
 require('./utils/logger')
 
@@ -68,7 +69,7 @@ app.use('/', infoRouter)
 
   try {
     const router = await buildRouter(preSelected)
-    app.use('/v1/chat/completions', router)
+    app.use('/v1/chat/completions', sequentialQueue(), router)
   } catch (error) {
     console.error('Failed to build initial router:', error)
     process.exit(1)
