@@ -2,6 +2,7 @@ const { readSSE } = require('../../utils/sse-reader')
 const RETRY_REASONS = {
   'Messages too frequent. Try again later.': true,
   'Server busy, please try again later.': true,
+  'Server is busy. Try again later, or use Instant Mode.': true,
   'A message is being generated, please try again later.': true,
 }
 
@@ -21,10 +22,11 @@ function streamHandler(stream, session, parser, retry) {
   const doRetry = (reason) => {
     cancelled = true
     console.error(`[DeepSeek] Stream error: ${reason}`)
-    parser.scan(`\n\n⚠ Stream error: ${reason}\n`)
+    parser.emitText(`\n\n⚠ Stream error: ${reason}\n`)
 
     if (RETRY_REASONS[reason] && retry) {
       console.debug('[DeepSeek] Retrying...')
+      parser.emitText(`Retrying...\n`)
       try {
         stream.destroy()
       } catch {}

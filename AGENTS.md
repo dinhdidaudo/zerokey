@@ -49,7 +49,7 @@
   extract-files.js # decodeContentParts — base64 data-URI → Buffer[] for file upload
   find-port.js # findPort, isPortActive — port scanning
   har-to-capture.js # harToCapture — HAR JSON → network-capture format
-  capture-request.js # captureRequest — dumps req.body to temp/captures/*.json ($req skill + unconditional on DeepSeek requests)
+  capture-request.js # captureRequest — dumps req.body to temp/captures/*.json ($req skill)
   ephemeral-session.js # ephemeralSession — clones session with chatSessionId/parentMessageId nulled, for ephemeral/utility calls
   sequential-queue.js # sequentialQueue — Express middleware serializing all requests through one app instance, one in flight at a time
   session-classifier.js # isRealChatSession — per-IDE fingerprinted system-prompt prefix match; default-deny classifies non-matching system-first calls as ephemeral
