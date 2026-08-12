@@ -17,11 +17,14 @@ function classifyError(error, provider) {
 
   // ── Rate limiting ──────────────────────────────────────
   if (statusCode === 429) {
+    const cooldownSec = error?.cooldownMs ? Math.ceil(error.cooldownMs / 1000) : null
+    const waitHint = cooldownSec
+      ? ` Retry in ~${cooldownSec}s.`
+      : ' Wait a few minutes and try again.'
     return {
       category: 'rate_limited',
-      message: `You've hit ${provider}'s rate limit.`,
-      action:
-        'Wait a few minutes and try again, or switch to a different session in the startup wizard.',
+      message: `You've hit ${provider}'s hourly message limit.`,
+      action: `${waitHint} Or switch to a different session in the startup wizard.`,
       status: 429,
     }
   }

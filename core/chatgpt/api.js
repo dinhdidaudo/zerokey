@@ -24,6 +24,7 @@ class ChatGPTAPI {
     this._bodyTemplate = null
     this._config = null
     this._ready = false
+    this._pageLoadedAt = Date.now()
     this._cookies = new CookieJar()
     this._httpAgent = new https.Agent({
       keepAlive: true,
@@ -193,11 +194,9 @@ class ChatGPTAPI {
     body.parent_message_id = parentMessageId
     body.client_prepare_state = parentMessageId ? 'success' : 'sent'
     if (body.client_contextual_info) {
-      body.client_contextual_info.time_since_loaded =
-        (body.client_contextual_info.time_since_loaded || 0) + parseInt(Math.random() * 100)
-
-      this._bodyTemplate.client_contextual_info.time_since_loaded =
-        body.client_contextual_info.time_since_loaded
+      // Real elapsed ms since this session's first request — mirrors browser's
+      // performance.now()-based time_since_loaded, anchored to page-load time.
+      body.client_contextual_info.time_since_loaded = Date.now() - this._pageLoadedAt
     }
 
     if (this._log)
@@ -220,12 +219,39 @@ class ChatGPTAPI {
 
     // Non-200 status is logged here; the error branch below throws for the caller to handle.
     // No automatic sentinel-refresh-and-retry is implemented.
-    if (res.status !== 200) {
-      console.error(`[ChatGPT] Got ${res.status}`)
-    }
-
     if (!res.ok) {
       const errText = await res.text()
+
+      // 429 from ChatGPT means hourly limit hit — set provider cooldown
+      if (res.status === 429) {
+        const { setProviderCooldown } = require('../../utils/rate-limiter')
+        // default 5 min cooldown; override from body or retry-after header
+        let cooldownMs = 5 * 60 * 1000
+        try {
+          const body = JSON.parse(errText)
+          if (body.cooldown_ms) cooldownMs = body.cooldown_ms
+          else if (body.retry_after_ms) cooldownMs = body.retry_after_ms
+        } catch (err) {
+          /* use default */
+          console.error(err)
+        }
+        const retryAfter = res.headers.get('retry-after')
+        if (retryAfter) {
+          const sec = parseInt(retryAfter, 10)
+          if (!isNaN(sec)) cooldownMs = sec * 1000
+        }
+        setProviderCooldown('ChatGPT', cooldownMs)
+        const err = new Error(`ChatGPT error 429: ${errText.slice(0, 300)}`)
+        err.status = 429
+        err.statusCode = 429
+        err.cooldownMs = cooldownMs
+        throw err
+      }
+
+      if (res.status !== 200) {
+        console.error(`[ChatGPT] Got ${res.status}`)
+      }
+
       const err = new Error(`ChatGPT error ${res.status}: ${errText.slice(0, 300)}`)
       err.status = res.status
       err.statusCode = res.status
@@ -305,8 +331,9 @@ class ChatGPTAPI {
 
     const sentinelProof = ChatGPTProofOfWork.generateSentinelProof([...this._config])
 
-    const url = `${this.BASE_URL}/backend-api/sentinel/chat-requirements/prepare`
-    const res = await this._fetch(url, {
+    // Step 1: prepare — get prepare_token + POW/turnstile challenges
+    const prepareUrl = `${this.BASE_URL}/backend-api/sentinel/chat-requirements/prepare`
+    const prepareRes = await this._fetch(prepareUrl, {
       method: 'POST',
       headers: this._buildHeaders(
         { accept: '*/*', 'content-type': 'application/json' },
@@ -315,30 +342,68 @@ class ChatGPTAPI {
       body: JSON.stringify({ p: sentinelProof }),
     })
 
-    if (!res.ok) {
-      const text = await res.text()
-      const err = new Error(`Sentinel ${res.status}: ${text.slice(0, 200)}`)
-      err.code = res.status
-      err.status = res.status
-      err.statusCode = res.status
+    if (!prepareRes.ok) {
+      const text = await prepareRes.text()
+      const err = new Error(`Sentinel prepare ${prepareRes.status}: ${text.slice(0, 200)}`)
+      err.code = prepareRes.status
+      err.status = prepareRes.status
+      err.statusCode = prepareRes.status
       throw err
     }
 
-    this._captureResponseHeaders(res)
+    this._captureResponseHeaders(prepareRes)
 
-    const data = await res.json()
-    if (!data.prepare_token || !data.proofofwork) {
-      throw new Error(`Sentinel unexpected: ${JSON.stringify(data)}`)
+    const prepareData = await prepareRes.json()
+    if (!prepareData.prepare_token || !prepareData.proofofwork) {
+      throw new Error(`Sentinel prepare unexpected: ${JSON.stringify(prepareData)}`)
     }
 
-    const powProof = ChatGPTProofOfWork.solve(data.proofofwork.seed, data.proofofwork.difficulty, [
-      ...this._config,
-    ])
+    const powProof = ChatGPTProofOfWork.solve(
+      prepareData.proofofwork.seed,
+      prepareData.proofofwork.difficulty,
+      [...this._config],
+    )
 
-    this._headers['openai-sentinel-chat-requirements-prepare-token'] = data.prepare_token
+    // Step 2: finalize — submit prepare_token + solved POW (+ turnstile) to get the
+    // chat-requirements token that goes on the actual /f/conversation request.
+    const finalizeBody = {
+      prepare_token: prepareData.prepare_token,
+      proofofwork: powProof + '~S',
+    }
+    if (prepareData.turnstile?.dx) {
+      finalizeBody.turnstile = prepareData.turnstile.dx
+    }
+
+    const finalizeUrl = `${this.BASE_URL}/backend-api/sentinel/chat-requirements/finalize`
+    const finalizeRes = await this._fetch(finalizeUrl, {
+      method: 'POST',
+      headers: this._buildHeaders(
+        { accept: '*/*', 'content-type': 'application/json' },
+        '/backend-api/sentinel/chat-requirements/finalize',
+      ),
+      body: JSON.stringify(finalizeBody),
+    })
+
+    if (!finalizeRes.ok) {
+      const text = await finalizeRes.text()
+      const err = new Error(`Sentinel finalize ${finalizeRes.status}: ${text.slice(0, 200)}`)
+      err.code = finalizeRes.status
+      err.status = finalizeRes.status
+      err.statusCode = finalizeRes.status
+      throw err
+    }
+
+    this._captureResponseHeaders(finalizeRes)
+
+    const finalizeData = await finalizeRes.json()
+    if (!finalizeData.token) {
+      throw new Error(`Sentinel finalize unexpected: ${JSON.stringify(finalizeData)}`)
+    }
+
+    this._headers['openai-sentinel-chat-requirements-token'] = finalizeData.token
     this._headers['openai-sentinel-proof-token'] = powProof + '~S'
-    if (data.turnstile?.dx) {
-      this._headers['openai-sentinel-turnstile-token'] = data.turnstile.dx
+    if (prepareData.turnstile?.dx) {
+      this._headers['openai-sentinel-turnstile-token'] = prepareData.turnstile.dx
     }
 
     // Cookies captured automatically via _captureResponseHeaders → CookieJar
@@ -431,9 +496,8 @@ class ChatGPTAPI {
       'oai-session-id': src['oai-session-id'] || '',
       ...(isConversation && {
         'oai-telemetry': src['oai-telemetry'] || '',
-        ...(src['openai-sentinel-chat-requirements-prepare-token'] && {
-          'openai-sentinel-chat-requirements-prepare-token':
-            src['openai-sentinel-chat-requirements-prepare-token'],
+        ...(src['openai-sentinel-chat-requirements-token'] && {
+          'openai-sentinel-chat-requirements-token': src['openai-sentinel-chat-requirements-token'],
         }),
         ...(src['openai-sentinel-proof-token'] && {
           'openai-sentinel-proof-token': src['openai-sentinel-proof-token'],
