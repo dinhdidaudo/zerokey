@@ -248,6 +248,20 @@ class ChatGPTAPI {
         throw err
       }
 
+      // 403 "unusual activity" is Cloudflare's device/IP bot-behavior flag —
+      // distinct from a stale-session 403. Retrying immediately just keeps
+      // tripping the same detector, so cool down instead of hammering it.
+      if (res.status === 403 && errText.toLowerCase().includes('unusual activity')) {
+        const { setProviderCooldown } = require('../../utils/rate-limiter')
+        const cooldownMs = 10 * 60 * 1000 // 10 min — longer than 429, this is a heavier flag
+        setProviderCooldown('ChatGPT', cooldownMs)
+        const err = new Error(`ChatGPT error 403: ${errText.slice(0, 300)}`)
+        err.status = 403
+        err.statusCode = 403
+        err.cooldownMs = cooldownMs
+        throw err
+      }
+
       if (res.status !== 200) {
         console.error(`[ChatGPT] Got ${res.status}`)
       }

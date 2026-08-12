@@ -5,6 +5,22 @@ function classifyError(error, provider) {
   const msg = (error?.message || String(error) || '').toLowerCase()
   const statusCode = error?.code || error?.statusCode || error?.status || 0
 
+  // ── Device/IP flagged (Cloudflare bot-behavior detection) ──
+  // Distinct from a stale session: re-capturing a fetch() from the same
+  // flagged device/IP will not fix this — it needs time (and/or a different
+  // network) to clear, not new cookies.
+  if (statusCode === 403 && msg.includes('unusual activity')) {
+    const cooldownSec = error?.cooldownMs ? Math.ceil(error.cooldownMs / 1000) : null
+    return {
+      category: 'device_flagged',
+      message: `${provider} flagged this device/IP for unusual activity (Cloudflare bot detection).`,
+      action: cooldownSec
+        ? `Pausing this session for ~${cooldownSec}s. Avoid retrying immediately — repeated attempts while flagged can prolong the block. If it persists, try a different network/IP.`
+        : 'Wait before retrying — repeated attempts while flagged can prolong the block. If it persists, try a different network/IP.',
+      status: 403,
+    }
+  }
+
   // ── Session expired / auth failures ────────────────────
   if (statusCode === 401 || statusCode === 403) {
     return {
