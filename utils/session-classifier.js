@@ -4,7 +4,7 @@
 // turn — treat it as an ephemeral/utility call (title-gen, tool-optimizer,
 // or any other short-lived request not yet individually fingerprinted).
 const REAL_SESSION_SIGNATURES = {
-  opencode: 'You are OpenCode',
+  opencode: 'You are opencode',
   terax: 'You are Terax, an AI agent',
   vscode: 'You are an expert AI programming assistant',
 }

@@ -282,7 +282,8 @@ SO DO ANALSIS OF IT AND GIVE USER SUMMARY WHICH WORKS WHICH NOT WORKS
 
 function showAvailableMcpTags(reqTools, parser) {
   const autoMaps = buildAutoAliasMaps(reqTools || [])
-  const tags = [...new Set([...Object.keys(MCP_ALIAS_MAPS), ...Object.keys(autoMaps)])]
+  const tags = Object.keys(autoMaps)
+  if (parser?.compiler?.ideName === 'vscode' && !tags.includes('$browser')) tags.push('$browser')
   if (tags.length) parser.emitText(`\nAvailable MCP tags: ${tags.join(', ')}\n\n`)
   else parser.emitText('No MCP tags registered yet!\n\n')
 }

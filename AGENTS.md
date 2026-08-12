@@ -23,14 +23,15 @@
    stream-handler.js # chatgptStreamHandler — SSE parsing, session-id tracking
    pow.js # ChatGPTProofOfWork — sentinel proof token decode/generate/solve
   session-selector.js # session-selector.js
- engine/
-  compiler.js # ToolCompiler — singleton per IDE×provider: uploadAndGetMessages, uploadAndFormatPrompt, uploadAndFormatPromptForRaw, buildPrompt, compile/parse/emit, matchSkill
-  pipeline.js # StreamPipeline — SSE stream head: scanning, emitting, MCP injection, skill handling, error formatting
-  instructions.js # Instructions — lazy-loads instructions.md + skills-extra.md, hash for change detection
-  instructions.md # Base system prompt (agent rules, BPI syntax, execution model, output contract)
-  skills-extra.md # Extra prompt appends (tool grammar, dynamic-tools listing)
-  triggers.js # Skills: $cwd, $save, $test, $browser, $mcp, $mcp-dump; MCP auto-registration, passthrough, restore
-  tool-defs.js # TOOLS — generic tool grammar + per-IDE mappings (vscode, terax, opencode), output shorteners
+  engine/
+   bpi.js # BpiRegistry — global BPI block registry for tool-call emission (compile/parse/emit)
+   compiler.js # ToolCompiler — singleton per IDE×provider: uploadAndGetMessages, uploadAndFormatPrompt, uploadAndFormatPromptForRaw, buildPrompt, compile/parse/emit, matchSkill
+   instructions.js # Instructions — lazy-loads instructions.md + skills-extra.md, hash for change detection
+   instructions.md # Base system prompt (agent rules, BPI syntax, execution model, output contract)
+   pipeline.js # StreamPipeline — SSE stream head: scanning, emitting, MCP injection, skill handling, error formatting
+   skills-extra.md # Extra prompt appends (tool grammar, dynamic-tools listing)
+   tool-defs.js # TOOLS — generic tool grammar + per-IDE mappings (vscode, terax, opencode), output shorteners
+   triggers.js # Skills: $cwd, $save, $test, $browser, $mcp, $mcp-dump; MCP auto-registration, passthrough, restore
   mcp/
    browser.js # BROWSER_MCP — built-in browser MCP alias map
    inject.js # injectMcpAliases — registers MCP tools into compiler.tools
@@ -96,8 +97,11 @@
   → engine/pipeline (StreamPipeline, passes messages → pipeline.session/rawMode)
   → core/chatgpt/api, core/chatgpt/stream-handler
   → utils/rate-limiter, utils/route-helpers
+ bpi.js
+  → global registry for BPI blocks (compile/parse/emit)
  pipeline.js
   → engine/compiler (ToolCompiler)
+  → engine/bpi (BpiRegistry)
   → engine/triggers (restoreMcpInjections, showAvailableMcpTags, handleSkill)
   → utils/errors (classifyError)
   → utils/session-classifier (isRealChatSession), utils/ephemeral-session (ephemeralSession)
