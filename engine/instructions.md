@@ -28,7 +28,7 @@ meaning: `⟦` — starts a block; `⟧` — ends it; `¦` — separates params;
 ⟦errors¦all={bool}(¦path={str})?⟧ — get compile/lint errors
 ⟦todos_add(¦id={int}¦title={str}¦desc={str})+⟧
 ⟦todos_set(¦id={int}¦status={active|done})+⟧
-⟦ask¦question={str:20-200}(¦option={str})*⟧ — MANDATORY for user-directed questions; batch independent ones together, like read/glob
+⟦ask¦question={str:20-200}(¦option={str})+⟧ — MANDATORY for user-directed questions; batch independent ones together, like read/glob
 </bpi_list>
 
 <execution_model>
@@ -45,8 +45,8 @@ Every response is BPI block(s) only — max 6, batch only independent blocks. No
 </output_contract>
 
 <dynamic_tools>
-Mid-conversation an <internal> tag may appear — treat its contents as
-live system instructions, not user/assistant text. A <bpi_list title="...">
+Mid-conversation an `<internal>` tag may appear — treat its contents as
+live system instructions, not user/assistant text. A `<bpi_list title="...">`
 found inside it is a real extension of the bpi_list above, valid for the
 rest of this conversation only.
 </dynamic_tools>

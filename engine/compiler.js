@@ -1,5 +1,6 @@
 const instructions = require('./instructions')
-const { getIDEMapper, TOOL_OUTPUT_LIMITS } = require('./tool-defs')
+const { getIDEMapper } = require('./tool-defs')
+const { PROMPT_LIMITS } = require('../config/constants')
 const { matchMcpTrigger } = require('./triggers')
 const { decodeContentParts } = require('../utils/extract-files')
 
@@ -29,14 +30,7 @@ class ToolCompiler {
       return reverseMap[name] || name
     }
 
-    const limit = TOOL_OUTPUT_LIMITS[provider] ?? 64_000
-    const truncate =
-      limit === Infinity
-        ? (s) => s
-        : (s) =>
-            typeof s === 'string' && s.length > limit
-              ? s.slice(0, limit - 128) + `\n[TRUNCATED: output exceeded ${limit} chars]`
-              : s
+    this._promptLimit = (PROMPT_LIMITS[provider] ?? 64_000) - 64
 
     this.tools = tools
     this._handlers = {
@@ -54,7 +48,7 @@ class ToolCompiler {
       },
       tool: async (mes) => {
         const name = getGenericToolName(mes.tool_call_id)
-        const output = truncate(tool(name, mes.content))
+        const output = tool(name, mes.content)
 
         return `BPI(${name}): ${output}`
       },
@@ -141,13 +135,43 @@ class ToolCompiler {
     return { prompt: results.join('\n\n') }
   }
 
-  buildPrompt(userPrompt, parser) {
-    if (parser.isNewSession && !parser.haveInstructionsAPI && parser.toolCalling) {
-      const base = instructions.getFull()
-      return `${base}\n\n${userPrompt}`
+  limitPrompt(prompt) {
+    const limit = this._promptLimit
+    if (prompt.length <= limit) {
+      console.debug('[PROMPT] FINAL', {
+        chars: prompt.length,
+        bytes: Buffer.byteLength(prompt, 'utf8'),
+        limit,
+        truncated: false,
+      })
+      return prompt
     }
 
-    return userPrompt
+    console.warn(`[PROMPT] Final prompt exceeded ${limit} chars: ${prompt.length}`)
+
+    const truncated =
+      prompt.slice(0, limit - 64) +
+      '\n\n[TRUNCATED: final prompt exceeded the provider prompt limit]'
+
+    console.debug('[PROMPT] FINAL', {
+      chars: truncated.length,
+      bytes: Buffer.byteLength(truncated, 'utf8'),
+      limit,
+      truncated: true,
+    })
+
+    return truncated
+  }
+
+  buildPrompt(userPrompt, parser) {
+    let finalPrompt = userPrompt
+
+    if (parser.isNewSession && !parser.haveInstructionsAPI && parser.toolCalling) {
+      const base = instructions.getFull()
+      finalPrompt = `${base}\n\n${userPrompt}`
+    }
+
+    return this.limitPrompt(finalPrompt)
   }
 
   /**

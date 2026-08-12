@@ -61,6 +61,10 @@
   sync-ide-config.js # syncIdeConfig — writes ZeroKey model entry into VS Code chatLanguageModels.json
  scripts/
   check-modules.js # Dependency integrity check
+
+## SKILLS
+ Skill triggers (engine/triggers.js): $cwd, $save, $req, $browser, $mcp, $mcp-dump, $test, $tools
+ $tools # re-emits the instructions.md — reminds LLM if forgotten mid-session
  server.js # Express app entry: session selection, IDE config sync, route mounting, graceful shutdown
 
 ## BUILD
@@ -180,6 +184,7 @@
   CONFIG.PORT → env PORT or 7250
   MODEL_HASH → per-provider model metadata (id, name, vision, context_length, max_output_length)
   MODELS → flattened model registry keyed by id
+  PROMPT_LIMITS → per-provider prompt/output char limits (claude/chatgpt 64k, deepseek 128k)
 
 ## KNOWN-INVARIANTS
  MODELS keyed by meta.id (slug), not display name; MODEL_HASH: id = canonical slug, name = display label
@@ -196,7 +201,7 @@
  pipeline.isNewSession, pipeline.toolCalling, pipeline.haveInstructionsAPI, pipeline.ephemeralMode set by StreamPipeline constructor; Claude sets haveInstructionsAPI=true
  Auto MCP registration: mcp_<server>_<tool> naming → $<server> tag, merged into MCP_ALIAS_MAPS
  StreamPipeline defers tool-call emission for terax/opencode (batched at flush), emits immediately for vscode
- Rate limiter: 5 req/15s window per provider label; provider 429 → setProviderCooldown(label, ms) blocks all requests for that label until cooldown expires (default 5 min, overridable via body cooldown_ms/retry_after_ms or retry-after header)
+ Rate limiter: 5 req/15s window per provider label; provider 429 → setProviderCooldown(label, ms) blocks all requests for that label until cooldown expires (default: time left until next UTC hour boundary, since ChatGPT's limit is hourly; overridable via body cooldown_ms/retry_after_ms or retry-after header)
  ChatGPT 403 with "unusual activity" body text → device/IP flagged by Cloudflare (not a stale session); triggers 10 min setProviderCooldown('ChatGPT', ...), classified separately in errors.js (category device_flagged) from generic 401/403 session_expired
  Error logs append to temp/errors.txt, rotated at 1MB
  VS Code model sync writes to %APPDATA%/Code/User/chatLanguageModels.json

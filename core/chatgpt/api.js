@@ -225,8 +225,12 @@ class ChatGPTAPI {
       // 429 from ChatGPT means hourly limit hit — set provider cooldown
       if (res.status === 429) {
         const { setProviderCooldown } = require('../../utils/rate-limiter')
-        // default 5 min cooldown; override from body or retry-after header
-        let cooldownMs = 5 * 60 * 1000
+        // default: time left until the top of the next hour (ChatGPT's
+        // limit is "N messages per hour", so it resets on the hour boundary,
+        // not a flat 5min); override from body or retry-after header if present
+        const now = new Date()
+        let cooldownMs =
+          ((60 - now.getUTCMinutes()) * 60 - now.getUTCSeconds()) * 1000 - now.getUTCMilliseconds()
         try {
           const body = JSON.parse(errText)
           if (body.cooldown_ms) cooldownMs = body.cooldown_ms

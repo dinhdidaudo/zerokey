@@ -40,7 +40,7 @@ function classifyError(error, provider) {
     return {
       category: 'rate_limited',
       message: `You've hit ${provider}'s hourly message limit.`,
-      action: `${waitHint} Or switch to a different session in the startup wizard.`,
+      action: `${waitHint} Or switch to a different user account in the startup wizard.`,
       status: 429,
     }
   }

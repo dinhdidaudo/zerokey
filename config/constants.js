@@ -83,6 +83,12 @@ const MODEL_HASH = {
   },
 }
 
+const PROMPT_LIMITS = {
+  claude: 64_000,
+  chatgpt: 50_000,
+  deepseek: 128_000,
+}
+
 const MODELS = {}
 for (const provider of Object.values(MODEL_HASH)) {
   for (const meta of Object.values(provider.models)) {
@@ -98,4 +104,4 @@ for (const provider of Object.values(MODEL_HASH)) {
   }
 }
 
-module.exports = { CONFIG, MODELS, MODEL_HASH }
+module.exports = { CONFIG, MODELS, MODEL_HASH, PROMPT_LIMITS }

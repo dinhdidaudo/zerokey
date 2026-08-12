@@ -255,19 +255,21 @@ const EDIT = () => ({
 const TOOLS = {
   read: {
     desc: 'Read file → content',
-    grammar: 'path={str}|(from={1-10000}|to={1-10000})?',
+    grammar: 'path={str}|(from={int}|to={int})?',
     eg: [{ path: '/path/to/file.txt' }, { path: '/path/to/file.txt', from: 1, to: 10 }],
     transformer: (params) => {
       if (params.from) {
         params.offset = params.from - 1
-        params.limit = Math.max(params.to - params.from + 1, 1)
+        if (params.to) {
+          params.limit = Math.max(params.to - params.from + 1, 1)
+        }
       }
     },
     keys: { from: true, to: true },
     vscode: {
       tool: 'read_file',
       params: { path: 'filePath', from: 'startLine', to: 'endLine' },
-      default: { filePath: ' ', startLine: 1, endLine: 10_000 },
+      default: { filePath: ' ', startLine: 1, endLine: 9007199254740991 },
     },
     terax: {
       tool: 'read_file',
@@ -876,10 +878,4 @@ function getIDEMapper(ide) {
   }
 }
 
-const TOOL_OUTPUT_LIMITS = {
-  claude: 64_000,
-  chatgpt: 64_000,
-  deepseek: Infinity,
-}
-
-module.exports = { TOOLS, getIDEMapper, TOOL_OUTPUT_LIMITS }
+module.exports = { TOOLS, getIDEMapper }

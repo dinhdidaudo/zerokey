@@ -2,6 +2,7 @@ const path = require('path')
 const { injectMcpAliases } = require('./mcp/inject')
 const { buildAutoAliasMaps, hashTools } = require('./mcp/auto')
 const { captureRequest } = require('../utils/capture-request')
+const instructions = require('./instructions')
 
 const BROWSER_MCP = require('./mcp/browser')
 const PLAYWRIGHT_MCP = require('./mcp/playwright')
@@ -94,8 +95,17 @@ function makePassthroughMcpCall(tag) {
   }
 }
 
+function makeCoreToolsPassthrough() {
+  return ({ messages, index }) => {
+    messages.splice(index, 1, {
+      role: 'internal',
+      content: instructions.getBase(),
+    })
+  }
+}
+
 /**
- * Fallback skill matcher for auto-registered MCP servers — called by
+ * Fallback skill matcher for auto-registered MCP servers — called by¦new_replace_all=false
  * ToolCompiler.matchSkill when the leading trigger word isn't a static
  * entry in the triggers array but matches a tag in MCP_ALIAS_MAPS.
  *
@@ -162,6 +172,12 @@ const triggers = [
     get bpi() {
       return '```json\n' + JSON.stringify(MCP_ALIAS_MAPS, null, 2) + '\n```'
     },
+  },
+  {
+    trigger: '$tools',
+    bpi: '',
+    passthrough: true,
+    call: makeCoreToolsPassthrough(),
   },
   {
     trigger: '$test',
